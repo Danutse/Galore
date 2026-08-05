@@ -20,6 +20,10 @@ $GaloreModuleManifest = [ordered]@{
         "GaloreLauncherSettings"
         "GaloreHardwareSnapshot"
         "GaloreProgramStatusRuntime"
+        "GaloreHardwareRuntimeState"
+        "GalorePopupRuntimeState"
+        "GaloreWindowTaskbarRuntimeState"
+        "GaloreStartMenuRuntimeState"
     )
 }
 
@@ -236,5 +240,101 @@ class GaloreProgramStatusRuntime {
     GaloreProgramStatusRuntime() {
         $this.StatusTimer = $null
         $this.RefreshTimers = [System.Collections.ArrayList]::new()
+    }
+}
+
+# ============================================================
+# HARDWARE RUNTIME
+# ============================================================
+
+class GaloreHardwareRuntimeState {
+    [GaloreHardwareSnapshot]$SystemUsageCache
+    [object]$HardwareJob
+    [object]$HardwareReadTimer
+    [object]$SystemTimer
+    [object]$RAMCleanupTimer
+    [object]$RAMCleanerPowerShell
+    [object]$RAMCleanerAsyncResult
+    [bool]$Stopping
+    [bool]$HardwareFailureLogged
+
+    GaloreHardwareRuntimeState() {
+        $this.SystemUsageCache = [GaloreHardwareSnapshot]::new()
+        $this.HardwareJob = $null
+        $this.HardwareReadTimer = $null
+        $this.SystemTimer = $null
+        $this.RAMCleanupTimer = $null
+        $this.RAMCleanerPowerShell = $null
+        $this.RAMCleanerAsyncResult = $null
+        $this.Stopping = $false
+        $this.HardwareFailureLogged = $false
+    }
+}
+
+# ============================================================
+# POPUP RUNTIME
+# ============================================================
+
+class GalorePopupRuntimeState {
+    [object]$SelectorForm
+    [object]$ActiveSystemToolPopup
+    [object]$ToolTip
+
+    GalorePopupRuntimeState() {
+        $this.SelectorForm = $null
+        $this.ActiveSystemToolPopup = $null
+        $this.ToolTip = $null
+    }
+}
+
+# ============================================================
+# WINDOW TASKBAR RUNTIME
+# ============================================================
+
+class GaloreWindowTaskbarRuntimeState {
+    [object]$Bar
+    [object]$Timer
+    [object]$ToolTip
+    [string]$Signature
+    [object]$KeyColor
+
+    GaloreWindowTaskbarRuntimeState() {
+        $this.Bar = $null
+        $this.Timer = $null
+        $this.ToolTip = $null
+        $this.Signature = "<uninitialized>"
+        $this.KeyColor = $null
+    }
+}
+
+# ============================================================
+# START MENU RUNTIME
+# ============================================================
+
+class GaloreStartMenuRuntimeState {
+    [object]$Form
+    [object]$SearchPanel
+    [object]$SearchBox
+    [object]$SearchResults
+    [object]$SearchDelayTimer
+    [object]$AnimationTimer
+    [object]$PendingSearch
+    [bool]$TargetVisible
+    [object]$WindowsButton
+    [object]$WindowsTimer
+    [object]$WindowsButtonNormalBounds
+
+    GaloreStartMenuRuntimeState() {
+        $this.Form = $null
+        $this.SearchPanel = $null
+        $this.SearchBox = $null
+        $this.SearchResults = $null
+        $this.SearchDelayTimer = $null
+        $this.AnimationTimer = $null
+        $this.PendingSearch = $null
+        $this.TargetVisible = $false
+        $this.WindowsButton = $null
+        $this.WindowsTimer = $null
+        $this.WindowsButtonNormalBounds = $null
     }
 }

@@ -5,24 +5,26 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherSystemTools"
     LoadOrder = 210
-    RequiresModules = @("LauncherBrowser", "LauncherLogging", "UI")
+    RequiresModules = @("LauncherDomain", "LauncherLogging", "LauncherPopup", "UI")
     RequiresFunctions = [ordered]@{
-        "Close-GaloreBrowserSelectorAnimated" = "LauncherBrowser"
+        "Close-GalorePopupAnimated" = "LauncherPopup"
+        "Clear-GalorePopupOwner" = "LauncherPopup"
         "New-CalculatorButton" = "UI"
         "New-InternetButton" = "UI"
         "New-KeyboardLanguageButton" = "UI"
         "New-VolumeButton" = "UI"
-        "Start-GaloreBrowserSelectorFade" = "LauncherBrowser"
+        "Start-GalorePopupFade" = "LauncherPopup"
+        "Stop-GalorePopupFade" = "LauncherPopup"
         "Write-LauncherDiagnostic" = "LauncherLogging"
     }
-    RequiresTypes = [ordered]@{}
-    RequiresVariables = @("AppRoot")
+    RequiresTypes = [ordered]@{
+        "GalorePopupRuntimeState" = "LauncherDomain"
+    }
+    RequiresVariables = @("AppRoot", "GalorePopupRuntime")
     RequiresFolders = @("resources")
     RequiresFiles = @()
     ProvidesTypes = @()
 }
-$script:GaloreSystemToolPopup = $null
-
 function Get-GaloreNetworkConnection {
     try {
         $profile = Get-NetConnectionProfile -ErrorAction Stop | Where-Object {
@@ -189,35 +191,49 @@ function New-GaloreSystemToolPopup {
     $ownedImage = $null
     $imagePath = Get-GaloreResourcePath $BackgroundImageName
     if(Test-Path -LiteralPath $imagePath -PathType Leaf) {
+        $sourceImage = $null
         try {
             $sourceImage = [System.Drawing.Image]::FromFile($imagePath)
             $ownedImage = New-Object System.Drawing.Bitmap($sourceImage)
-            $sourceImage.Dispose()
             $popup.BackgroundImage = $ownedImage
             $popup.BackgroundImageLayout = [System.Windows.Forms.ImageLayout]::None
             $popup.ClientSize = [System.Drawing.Size]::new($ownedImage.Width, $ownedImage.Height)
         } catch {
             Write-LauncherDiagnostic -Exception $_ -Context "Failed to load '$BackgroundImageName'."
+        } finally {
+            if($sourceImage) {
+                $sourceImage.Dispose()
+            }
         }
     }
     if($null -eq $ownedImage) {
         $popup.ClientSize = [System.Drawing.Size]::new($FallbackWidth, $FallbackHeight)
     }
-    $popup.Tag = [pscustomobject]@{ SelectorImage = $ownedImage; FadeTimer = $null; IsClosing = $false }
+    $popup.Tag = [pscustomobject]@{ SelectorImage = $ownedImage; FadeTimer = $null; IsClosing = $false; Runtime = $script:GalorePopupRuntime }
     $popup.Add_FormClosing({
         param($sender, $e)
-        if(-not $this.Tag.IsClosing) {
-            $e.Cancel = $true
-            Close-GaloreBrowserSelectorAnimated -Form $this
+        if($null -eq $this.Tag) {
+            return
         }
+        if($e.CloseReason -eq [System.Windows.Forms.CloseReason]::UserClosing -and -not $this.Tag.IsClosing) {
+            $e.Cancel = $true
+            Close-GalorePopupAnimated -Form $this
+            return
+        }
+        $this.Tag.IsClosing = $true
     })
     $popup.Add_FormClosed({
         $context = $this.Tag
-        if($context.SelectorImage) { $context.SelectorImage.Dispose() }
-        if($script:GaloreSystemToolPopup -eq $this) { $script:GaloreSystemToolPopup = $null }
+        if($context) {
+            Stop-GalorePopupFade -Form $this
+            if($context.SelectorImage) { $context.SelectorImage.Dispose() }
+            $this.BackgroundImage = $null
+            Clear-GalorePopupOwner -Runtime $context.Runtime -PropertyName "ActiveSystemToolPopup" -Form $this
+            $this.Tag = $null
+        }
     })
     $popup.Add_Deactivate({
-        if(-not $this.IsDisposed) { Close-GaloreBrowserSelectorAnimated -Form $this }
+        if(-not $this.IsDisposed) { Close-GalorePopupAnimated -Form $this }
     })
     $anchorPoint = $Anchor.PointToScreen([System.Drawing.Point]::Empty)
     $area = [System.Windows.Forms.Screen]::FromPoint($anchorPoint).WorkingArea
@@ -230,17 +246,18 @@ function New-GaloreSystemToolPopup {
 
 function Show-GaloreSystemToolPopup {
     param($Popup, $Owner)
-    if($script:GaloreSystemToolPopup -and -not $script:GaloreSystemToolPopup.IsDisposed) {
-        Close-GaloreBrowserSelectorAnimated -Form $script:GaloreSystemToolPopup
+    $runtime = $script:GalorePopupRuntime
+    if($runtime.ActiveSystemToolPopup -and -not $runtime.ActiveSystemToolPopup.IsDisposed) {
+        Close-GalorePopupAnimated -Form $runtime.ActiveSystemToolPopup
     }
-    $script:GaloreSystemToolPopup = $Popup
+    $runtime.ActiveSystemToolPopup = $Popup
     $Popup.Opacity = 0
     if($Owner -and -not $Owner.IsDisposed) {
         $Popup.Show($Owner)
     } else {
         $Popup.Show()
     }
-    Start-GaloreBrowserSelectorFade -Form $Popup -TargetOpacity 1
+    Start-GalorePopupFade -Form $Popup -TargetOpacity 1
 }
 
 function Show-GaloreVolumePopup {
@@ -291,7 +308,7 @@ function Show-GaloreKeyboardLanguagePopup {
             $target = [Math]::Max(0, [Math]::Min($maximum, $list.VerticalScroll.Value - $e.Delta))
             $list.AutoScrollPosition = New-Object System.Drawing.Point(0, $target)
         })
-        $choice.Add_Click({ [System.Windows.Forms.InputLanguage]::CurrentInputLanguage = $this.Tag; Close-GaloreBrowserSelectorAnimated -Form $this.FindForm() })
+        $choice.Add_Click({ [System.Windows.Forms.InputLanguage]::CurrentInputLanguage = $this.Tag; Close-GalorePopupAnimated -Form $this.FindForm() })
         $languageList.Controls.Add($choice)
         $top += 30
     }
@@ -301,9 +318,13 @@ function Show-GaloreKeyboardLanguagePopup {
 
 function Initialize-GaloreSystemTools {
     param([System.Windows.Forms.Form]$Form)
-    $toolTip = New-Object System.Windows.Forms.ToolTip
-    $toolTip.InitialDelay = 400
-    $toolTip.AutoPopDelay = 5000
+    $runtime = $script:GalorePopupRuntime
+    if(-not $runtime.ToolTip) {
+        $runtime.ToolTip = New-Object System.Windows.Forms.ToolTip
+        $runtime.ToolTip.InitialDelay = 400
+        $runtime.ToolTip.AutoPopDelay = 5000
+    }
+    $toolTip = $runtime.ToolTip
     $internetButton = New-InternetButton
     $internetButton.Add_MouseEnter({
         param($sender, $e)
@@ -337,4 +358,25 @@ function Initialize-GaloreSystemTools {
     })
     $toolTip.SetToolTip($calculatorButton, "Calculator")
     $Form.Controls.Add($calculatorButton)
+}
+
+function Stop-GaloreSystemToolResources {
+    $runtime = $script:GalorePopupRuntime
+    $popup = $runtime.ActiveSystemToolPopup
+    if($popup -and -not $popup.IsDisposed) {
+        if($popup.Tag) {
+            $popup.Tag.IsClosing = $true
+        }
+        Stop-GalorePopupFade -Form $popup
+        $popup.Close()
+    }
+    Clear-GalorePopupOwner -Runtime $runtime -PropertyName "ActiveSystemToolPopup" -Form $popup
+    if($runtime.ToolTip) {
+        try {
+            $runtime.ToolTip.Dispose()
+        } catch {
+        } finally {
+            $runtime.ToolTip = $null
+        }
+    }
 }

@@ -5,7 +5,7 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherEvents"
     LoadOrder = 50
-    RequiresModules = @("LauncherLogging", "LauncherDesktop", "LauncherHardware", "LauncherHotkeys", "LauncherMaintenance", "LauncherPrograms", "LauncherSettings", "LauncherStartMenu", "ProgramWindowUI", "SplashSupport", "UI", "LauncherRecycleHelper", "LauncherPostIts")
+    RequiresModules = @("LauncherLogging", "LauncherDesktop", "LauncherHardware", "LauncherHotkeys", "LauncherMaintenance", "LauncherPrograms", "LauncherSettings", "LauncherStartMenu", "ProgramWindowUI", "SplashSupport", "UI", "LauncherRecycleHelper", "LauncherPostIts", "LauncherBrowser", "LauncherSystemTools")
     RequiresFunctions = [ordered]@{
         "Write-GaloreLog" = "LauncherLogging"
         "Write-LauncherDiagnostic" = "LauncherLogging"
@@ -23,6 +23,8 @@ $GaloreModuleManifest = [ordered]@{
         "Stop-ProgramWindowResources" = "ProgramWindowUI"
         "Stop-SplashResources" = "SplashSupport"
         "Stop-GalorePostItResources" = "LauncherPostIts"
+        "Stop-GaloreBrowserResources" = "LauncherBrowser"
+        "Stop-GaloreSystemToolResources" = "LauncherSystemTools"
         "Stop-StartMenuResources" = "LauncherStartMenu"
         "Stop-UIResources" = "UI"
     }
@@ -205,6 +207,8 @@ function Stop-LauncherRuntimeResources {
             "Stop-GaloreMaintenance"
             "Stop-SplashResources"
             "Stop-GalorePostItResources"
+            "Stop-GaloreBrowserResources"
+            "Stop-GaloreSystemToolResources"
         )
     ) {
         if(Get-Command -Name $stopFunction -CommandType Function -ErrorAction SilentlyContinue) {

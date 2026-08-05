@@ -461,14 +461,17 @@ function New-WindowsStartButton {
         } finally {
             $windowsImage.Dispose()
         }
-        $windowsButton.Tag = $windowsBitmap
+        $windowsButton.Tag = [pscustomobject]@{
+            Bitmap = $windowsBitmap
+            Rotation = 0.0
+        }
     }
     $windowsButton.Add_Disposed({
-        $ownedImage = $this.Tag
+        $ownedImage = if($this.Tag) { $this.Tag.Bitmap } else { $null }
         if($ownedImage -is [System.Drawing.Image]) {
-            $this.Tag = $null
             $ownedImage.Dispose()
         }
+        $this.Tag = $null
     })
 
     # ==========================
@@ -477,12 +480,12 @@ function New-WindowsStartButton {
 
     $doubleBufferProperty = $windowsButton.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags] "Instance,NonPublic")
     $doubleBufferProperty.SetValue($windowsButton, $true, $null)
-    $script:WindowsRotation = 0
     $windowsButton.Add_Paint({
-        $thisBitmap = $this.Tag
-        if($null -eq $thisBitmap) {
+        $state = $this.Tag
+        if($null -eq $state -or $null -eq $state.Bitmap) {
             return
         }
+        $thisBitmap = $state.Bitmap
         $g = $_.Graphics
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
         $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
@@ -490,18 +493,28 @@ function New-WindowsStartButton {
         $centerX = $this.Width / 2
         $centerY = $this.Height / 2
         $g.TranslateTransform($centerX, $centerY)
-        $g.RotateTransform($script:WindowsRotation)
+        $g.RotateTransform($state.Rotation)
         $g.DrawImage($thisBitmap, -$centerX, -$centerY, $this.Width, $this.Height)
         $g.ResetTransform()
     })
     $windowsTimer = New-Object System.Windows.Forms.Timer
     $windowsTimer.Interval = 60
+    $windowsTimer.Tag = [pscustomobject]@{
+        Button = $windowsButton
+        RotationState = $windowsButton.Tag
+    }
     $windowsTimer.Add_Tick({
-        $script:WindowsRotation += 0.2
-        if($script:WindowsRotation -ge 360) {
-            $script:WindowsRotation = 0
+        $state = $this.Tag
+        if($null -eq $state -or $null -eq $state.Button -or $state.Button.IsDisposed -or $null -eq $state.RotationState) {
+            $this.Stop()
+            $this.Tag = $null
+            return
         }
-        $windowsButton.Invalidate()
+        $state.RotationState.Rotation += 0.2
+        if($state.RotationState.Rotation -ge 360) {
+            $state.RotationState.Rotation = 0
+        }
+        $state.Button.Invalidate()
     })
     $windowsTimer.Start()
     return @{

@@ -58,7 +58,11 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherStartMenu.ps1")
 
+. (Join-Path $moduleRoot "LauncherPopup.ps1")
+
 . (Join-Path $moduleRoot "LauncherBrowser.ps1")
+
+. (Join-Path $moduleRoot "LauncherSystemTools.ps1")
 
 . (Join-Path $moduleRoot "LauncherAlphaOverlay.ps1")
 
@@ -433,6 +437,78 @@ Describe "Search result data" {
 
 }
 
+Describe "Start menu lifecycle" {
+
+    BeforeEach {
+
+        Stop-StartMenuResources
+
+    }
+
+    It "keeps Windows icon animation state on the timer instead of a local closure" {
+
+        $windowsUI = New-WindowsStartButton
+
+        try {
+            $windowsUI.Timer.Tag |
+            Should Not BeNullOrEmpty
+
+            [object]::ReferenceEquals($windowsUI.Timer.Tag.Button, $windowsUI.Button) |
+            Should Be $true
+
+            [object]::ReferenceEquals($windowsUI.Timer.Tag.RotationState, $windowsUI.Button.Tag) |
+            Should Be $true
+
+            $initialRotation = [double]$windowsUI.Timer.Tag.RotationState.Rotation
+            Start-Sleep -Milliseconds 80
+            [System.Windows.Forms.Application]::DoEvents()
+
+            ([double]$windowsUI.Timer.Tag.RotationState.Rotation -gt $initialRotation) |
+            Should Be $true
+
+        } finally {
+            $windowsUI.Timer.Stop()
+            $windowsUI.Timer.Tag = $null
+            $windowsUI.Timer.Dispose()
+            $windowsUI.Button.Dispose()
+        }
+
+    }
+
+    It "does not create duplicate Windows toggle controls for the same form" {
+
+        $form = New-Object System.Windows.Forms.Form
+
+        Mock New-WindowsStartButton {
+            [pscustomobject]@{
+                Button = New-Object System.Windows.Forms.Button
+                Timer = New-Object System.Windows.Forms.Timer
+            }
+        }
+
+        try {
+            Initialize-StartMenu -Form $form
+            $firstButton = $script:GaloreStartMenuRuntime.WindowsButton
+            $firstTimer = $script:GaloreStartMenuRuntime.WindowsTimer
+
+            Initialize-StartMenu -Form $form
+
+            [object]::ReferenceEquals($firstButton, $script:GaloreStartMenuRuntime.WindowsButton) |
+            Should Be $true
+
+            [object]::ReferenceEquals($firstTimer, $script:GaloreStartMenuRuntime.WindowsTimer) |
+            Should Be $true
+
+            Assert-MockCalled New-WindowsStartButton -Times 1 -Exactly -Scope It
+        } finally {
+            Stop-StartMenuResources
+            $form.Dispose()
+        }
+
+    }
+
+}
+
 Describe "Quick Access persistence" {
 
     BeforeEach {
@@ -704,20 +780,41 @@ Describe "Window taskbar filtering" {
 
     It "stops and clears taskbar runtime state safely" {
 
-        $script:GaloreWindowTaskbar = $null
-        $script:GaloreWindowTaskbarTimer = New-Object System.Windows.Forms.Timer
-        $script:GaloreWindowTaskbarSignature = "previous-state"
+        $script:GaloreWindowTaskbarRuntime = [GaloreWindowTaskbarRuntimeState]::new()
+        $script:GaloreWindowTaskbarRuntime.Timer = New-Object System.Windows.Forms.Timer
+        $script:GaloreWindowTaskbarRuntime.Signature = "previous-state"
 
         Stop-GaloreWindowTaskbar
 
-        $script:GaloreWindowTaskbar |
+        $script:GaloreWindowTaskbarRuntime.Bar |
         Should Be $null
 
-        $script:GaloreWindowTaskbarTimer |
+        $script:GaloreWindowTaskbarRuntime.Timer |
         Should Be $null
 
-        $script:GaloreWindowTaskbarSignature |
-        Should Be $null
+        $script:GaloreWindowTaskbarRuntime.Signature |
+        Should Be "<uninitialized>"
+
+    }
+
+    It "uses one typed runtime owner for the taskbar timer and display state" {
+
+        $runtime = [GaloreWindowTaskbarRuntimeState]::new()
+
+        $runtime.Bar |
+        Should BeNullOrEmpty
+
+        $runtime.Timer |
+        Should BeNullOrEmpty
+
+        $runtime.ToolTip |
+        Should BeNullOrEmpty
+
+        $runtime.Signature |
+        Should Be "<uninitialized>"
+
+        $runtime.KeyColor |
+        Should BeNullOrEmpty
 
     }
 
@@ -2109,35 +2206,54 @@ Describe "Hardware snapshot conversion" {
 
     BeforeEach {
 
-        $script:HardwareJob = $null
-
-        if($script:HardwareReadTimer -and -not $script:HardwareReadTimer.IsDisposed) {
-
-            $script:HardwareReadTimer.Dispose()
-
-        }
-
-        $script:HardwareReadTimer = $null
+        $script:GaloreHardwareRuntime = [GaloreHardwareRuntimeState]::new()
 
     }
 
     AfterEach {
 
-        if($script:HardwareReadTimer -and -not $script:HardwareReadTimer.IsDisposed) {
-
-            $script:HardwareReadTimer.Dispose()
-
+        foreach($timer in @(
+                $script:GaloreHardwareRuntime.HardwareReadTimer,
+                $script:GaloreHardwareRuntime.SystemTimer,
+                $script:GaloreHardwareRuntime.RAMCleanupTimer
+            )
+        ) {
+            if($timer) {
+                $timer.Tag = $null
+                $timer.Dispose()
+            }
         }
-
-        $script:HardwareReadTimer = $null
-
-        $script:HardwareJob = $null
 
     }
 
     It "does not start the background monitor as an import side effect" {
 
-        $script:HardwareJob |
+        $script:GaloreHardwareRuntime.HardwareJob |
+        Should BeNullOrEmpty
+
+    }
+
+    It "starts with a typed zero-value hardware runtime" {
+
+        $script:GaloreHardwareRuntime.GetType().Name |
+        Should Be "GaloreHardwareRuntimeState"
+
+        $script:GaloreHardwareRuntime.SystemUsageCache.GetType().Name |
+        Should Be "GaloreHardwareSnapshot"
+
+        $script:GaloreHardwareRuntime.SystemUsageCache.CPU |
+        Should Be 0
+
+        $script:GaloreHardwareRuntime.HardwareReadTimer |
+        Should BeNullOrEmpty
+
+        $script:GaloreHardwareRuntime.SystemTimer |
+        Should BeNullOrEmpty
+
+        $script:GaloreHardwareRuntime.RAMCleanupTimer |
+        Should BeNullOrEmpty
+
+        $script:GaloreHardwareRuntime.RAMCleanerPowerShell |
         Should BeNullOrEmpty
 
     }
@@ -2193,7 +2309,7 @@ Describe "Hardware snapshot conversion" {
 
     It "reuses an existing running hardware job" {
 
-        $script:HardwareJob = [pscustomobject]@{
+        $script:GaloreHardwareRuntime.HardwareJob = [pscustomobject]@{
             State = [System.Management.Automation.JobState]::Running
         }
 
@@ -2202,6 +2318,26 @@ Describe "Hardware snapshot conversion" {
         Initialize-HardwareMonitorJob
 
         Assert-MockCalled Start-Job -Times 0 -Exactly -Scope It
+
+    }
+
+    It "does not start hardware resources after shutdown has begun" {
+
+        $script:GaloreHardwareRuntime.Stopping = $true
+
+        Mock Start-Job {}
+
+        Initialize-HardwareMonitorJob
+        Initialize-HardwareCacheReader
+        Initialize-RAMCleanupSchedule
+
+        Assert-MockCalled Start-Job -Times 0 -Exactly -Scope It
+
+        $script:GaloreHardwareRuntime.HardwareReadTimer |
+        Should BeNullOrEmpty
+
+        $script:GaloreHardwareRuntime.RAMCleanupTimer |
+        Should BeNullOrEmpty
 
     }
 
@@ -2216,7 +2352,7 @@ Describe "Hardware snapshot conversion" {
             State = [System.Management.Automation.JobState]::Running
         }
 
-        $script:HardwareJob = $staleJob
+        $script:GaloreHardwareRuntime.HardwareJob = $staleJob
 
         Mock Stop-Job {}
 
@@ -2236,14 +2372,14 @@ Describe "Hardware snapshot conversion" {
 
         Assert-MockCalled Start-Job -Times 1 -Exactly -Scope It
 
-        $script:HardwareJob |
+        $script:GaloreHardwareRuntime.HardwareJob |
         Should Be $replacementJob
 
     }
 
     It "keeps one cache-reader timer across repeated initialization" {
 
-        $script:HardwareJob = [pscustomobject]@{
+        $script:GaloreHardwareRuntime.HardwareJob = [pscustomobject]@{
             Id = 21
             State = [System.Management.Automation.JobState]::Running
         }
@@ -2252,14 +2388,17 @@ Describe "Hardware snapshot conversion" {
 
         Initialize-HardwareCacheReader
 
-        $firstTimer = $script:HardwareReadTimer
+        $firstTimer = $script:GaloreHardwareRuntime.HardwareReadTimer
 
         Initialize-HardwareCacheReader
 
-        [object]::ReferenceEquals($firstTimer, $script:HardwareReadTimer) |
+        [object]::ReferenceEquals($firstTimer, $script:GaloreHardwareRuntime.HardwareReadTimer) |
         Should Be $true
 
         Assert-MockCalled Start-Job -Times 0 -Exactly -Scope It
+
+        $script:GaloreHardwareRuntime.HardwareReadTimer.Tag |
+        Should Be $script:GaloreHardwareRuntime
 
     }
 
@@ -2269,9 +2408,9 @@ Describe "Hardware snapshot conversion" {
 
         $timer.Interval = 100
 
-        $script:HardwareReadTimer = $timer
+        $script:GaloreHardwareRuntime.HardwareReadTimer = $timer
 
-        $script:HardwareJob = [pscustomobject]@{
+        $script:GaloreHardwareRuntime.HardwareJob = [pscustomobject]@{
             Id = 84
             State = [System.Management.Automation.JobState]::Failed
         }
@@ -2290,15 +2429,160 @@ Describe "Hardware snapshot conversion" {
 
         Initialize-HardwareCacheReader
 
-        [object]::ReferenceEquals($timer, $script:HardwareReadTimer) |
+        [object]::ReferenceEquals($timer, $script:GaloreHardwareRuntime.HardwareReadTimer) |
         Should Be $true
 
-        $script:HardwareJob |
+        $script:GaloreHardwareRuntime.HardwareJob |
         Should Be $replacementJob
 
         Assert-MockCalled Remove-Job -Times 1 -Exactly -Scope It -ParameterFilter { $Id -eq 84 }
 
         Assert-MockCalled Start-Job -Times 1 -Exactly -Scope It
+
+    }
+
+    It "reuses the display timer while refreshing its current UI bindings" {
+
+        $firstForm = New-Object System.Windows.Forms.Form
+        $secondForm = New-Object System.Windows.Forms.Form
+        $firstCPU = New-Object System.Windows.Forms.Label
+        $firstRAM = New-Object System.Windows.Forms.Label
+        $firstGPU = New-Object System.Windows.Forms.Label
+        $firstTemp = New-Object System.Windows.Forms.Label
+        $secondCPU = New-Object System.Windows.Forms.Label
+        $secondRAM = New-Object System.Windows.Forms.Label
+        $secondGPU = New-Object System.Windows.Forms.Label
+        $secondTemp = New-Object System.Windows.Forms.Label
+
+        try {
+            Initialize-SystemMonitorDisplay $firstCPU $firstRAM $firstGPU $firstTemp $firstForm
+            $firstTimer = $script:GaloreHardwareRuntime.SystemTimer
+
+            Initialize-SystemMonitorDisplay $secondCPU $secondRAM $secondGPU $secondTemp $secondForm
+
+            [object]::ReferenceEquals($firstTimer, $script:GaloreHardwareRuntime.SystemTimer) |
+            Should Be $true
+
+            $script:GaloreHardwareRuntime.SystemTimer.Tag.Form |
+            Should Be $secondForm
+
+            $script:GaloreHardwareRuntime.SystemTimer.Tag.CPULabel |
+            Should Be $secondCPU
+        } finally {
+            $firstForm.Dispose()
+            $secondForm.Dispose()
+        }
+
+    }
+
+    It "keeps one hourly RAM cleanup timer across repeated initialization" {
+
+        Initialize-RAMCleanupSchedule
+
+        $firstTimer = $script:GaloreHardwareRuntime.RAMCleanupTimer
+
+        Initialize-RAMCleanupSchedule
+
+        [object]::ReferenceEquals($firstTimer, $script:GaloreHardwareRuntime.RAMCleanupTimer) |
+        Should Be $true
+
+        $script:GaloreHardwareRuntime.RAMCleanupTimer.Interval |
+        Should Be 3600000
+
+        $script:GaloreHardwareRuntime.RAMCleanupTimer.Enabled |
+        Should Be $true
+
+    }
+
+    It "stops and clears owned hardware resources idempotently" {
+
+        $script:GaloreHardwareRuntime.HardwareReadTimer = New-Object System.Windows.Forms.Timer
+        $script:GaloreHardwareRuntime.HardwareReadTimer.Tag = $script:GaloreHardwareRuntime
+        $script:GaloreHardwareRuntime.SystemTimer = New-Object System.Windows.Forms.Timer
+        $script:GaloreHardwareRuntime.SystemTimer.Tag = [pscustomobject]@{ Form = $null }
+        $script:GaloreHardwareRuntime.RAMCleanupTimer = New-Object System.Windows.Forms.Timer
+        $script:GaloreHardwareRuntime.RAMCleanerPowerShell = [powershell]::Create()
+
+        Stop-HardwareMonitor
+
+        $script:GaloreHardwareRuntime.Stopping |
+        Should Be $true
+
+        $script:GaloreHardwareRuntime.HardwareReadTimer |
+        Should BeNullOrEmpty
+
+        $script:GaloreHardwareRuntime.SystemTimer |
+        Should BeNullOrEmpty
+
+        $script:GaloreHardwareRuntime.RAMCleanupTimer |
+        Should BeNullOrEmpty
+
+        $script:GaloreHardwareRuntime.RAMCleanerPowerShell |
+        Should BeNullOrEmpty
+
+        { Stop-HardwareMonitor } |
+        Should Not Throw
+
+    }
+
+}
+
+Describe "Popup runtime ownership" {
+
+    BeforeEach {
+
+        $script:GalorePopupRuntime = [GalorePopupRuntimeState]::new()
+
+    }
+
+    It "starts with no owned selector, system popup, or tooltip" {
+
+        $script:GalorePopupRuntime.SelectorForm |
+        Should BeNullOrEmpty
+
+        $script:GalorePopupRuntime.ActiveSystemToolPopup |
+        Should BeNullOrEmpty
+
+        $script:GalorePopupRuntime.ToolTip |
+        Should BeNullOrEmpty
+
+    }
+
+    It "clears popup ownership only for the form that is still current" {
+
+        $previousPopup = New-Object object
+        $currentPopup = New-Object object
+
+        $script:GalorePopupRuntime.SelectorForm = $currentPopup
+
+        Clear-GalorePopupOwner -Runtime $script:GalorePopupRuntime -PropertyName "SelectorForm" -Form $previousPopup
+
+        [object]::ReferenceEquals($script:GalorePopupRuntime.SelectorForm, $currentPopup) |
+        Should Be $true
+
+        Clear-GalorePopupOwner -Runtime $script:GalorePopupRuntime -PropertyName "SelectorForm" -Form $currentPopup
+
+        $script:GalorePopupRuntime.SelectorForm |
+        Should BeNullOrEmpty
+
+    }
+
+    It "applies the same reference-safe release rule to system-tool popups" {
+
+        $previousPopup = New-Object object
+        $currentPopup = New-Object object
+
+        $script:GalorePopupRuntime.ActiveSystemToolPopup = $currentPopup
+
+        Clear-GalorePopupOwner -Runtime $script:GalorePopupRuntime -PropertyName "ActiveSystemToolPopup" -Form $previousPopup
+
+        [object]::ReferenceEquals($script:GalorePopupRuntime.ActiveSystemToolPopup, $currentPopup) |
+        Should Be $true
+
+        Clear-GalorePopupOwner -Runtime $script:GalorePopupRuntime -PropertyName "ActiveSystemToolPopup" -Form $currentPopup
+
+        $script:GalorePopupRuntime.ActiveSystemToolPopup |
+        Should BeNullOrEmpty
 
     }
 

@@ -12,6 +12,7 @@ $GaloreModuleManifest = [ordered]@{
     }
     RequiresTypes = [ordered]@{
         "GaloreHardwareSnapshot" = "LauncherDomain"
+        "GaloreHardwareRuntimeState" = "LauncherDomain"
     }
     RequiresVariables = @("AppRoot")
     RequiresFolders = @()
@@ -23,7 +24,7 @@ $GaloreModuleManifest = [ordered]@{
 # SYSTEM MONITOR CACHE
 # ============================================================
 
-$script:SystemUsageCache = [GaloreHardwareSnapshot]::new()
+$script:GaloreHardwareRuntime = [GaloreHardwareRuntimeState]::new()
 
 # ============================================================
 # RAM CLEANER
@@ -45,29 +46,37 @@ public class MemoryCleaner
 }
 "@
 }
-$script:RAMCleanerPowerShell = $null
-$script:RAMCleanerAsyncResult = $null
-$script:RAMCleanupTimer = $null
-
 function Clear-RAM {
-    if($script:RAMCleanerPowerShell) {
-        $cleanerState = $script:RAMCleanerPowerShell.InvocationStateInfo.State
-        if($cleanerState -eq [System.Management.Automation.PSInvocationState]::Running) {
+    $runtime = $script:GaloreHardwareRuntime
+    if($runtime.Stopping) {
+        return
+    }
+    if($runtime.RAMCleanerPowerShell) {
+        $cleanerState = $runtime.RAMCleanerPowerShell.InvocationStateInfo.State
+        if($cleanerState -in @(
+                [System.Management.Automation.PSInvocationState]::Running,
+                [System.Management.Automation.PSInvocationState]::Stopping
+            )) {
             return
         }
         try {
-            if($script:RAMCleanerAsyncResult) {
-                $script:RAMCleanerPowerShell.EndInvoke($script:RAMCleanerAsyncResult) | Out-Null
+            if($runtime.RAMCleanerAsyncResult) {
+                $runtime.RAMCleanerPowerShell.EndInvoke($runtime.RAMCleanerAsyncResult) | Out-Null
             }
         } catch {
             Write-LauncherDiagnostic -Exception $_ -Context "The previous RAM-cleanup operation did not complete normally."
         }
-        $script:RAMCleanerPowerShell.Dispose()
-        $script:RAMCleanerPowerShell = $null
-        $script:RAMCleanerAsyncResult = $null
+        try {
+            $runtime.RAMCleanerPowerShell.Dispose()
+        } catch {
+            Write-LauncherDiagnostic -Exception $_ -Context "The previous RAM-cleanup resources could not be released cleanly."
+        }
+        $runtime.RAMCleanerPowerShell = $null
+        $runtime.RAMCleanerAsyncResult = $null
     }
-    $script:RAMCleanerPowerShell = [powershell]::Create()
-    $script:RAMCleanerPowerShell.AddScript({
+    $cleaner = [powershell]::Create()
+    try {
+        $cleaner.AddScript({
 
         # ==========================
         # TRIM ALL PROCESSES
@@ -92,8 +101,17 @@ function Clear-RAM {
         # ==========================
 
         Start-Process "rundll32.exe" "advapi32.dll,ProcessIdleTasks" -WindowStyle Hidden
-    }) | Out-Null
-    $script:RAMCleanerAsyncResult = $script:RAMCleanerPowerShell.BeginInvoke()
+        }) | Out-Null
+        $asyncResult = $cleaner.BeginInvoke()
+        $runtime.RAMCleanerPowerShell = $cleaner
+        $runtime.RAMCleanerAsyncResult = $asyncResult
+    } catch {
+        try {
+            $cleaner.Dispose()
+        } catch {
+        }
+        throw
+    }
 }
 
 # ============================================================
@@ -101,7 +119,8 @@ function Clear-RAM {
 # ============================================================
 
 function Initialize-RAMCleanupSchedule {
-    if($script:RAMCleanupTimer -and -not $script:RAMCleanupTimer.IsDisposed) {
+    $runtime = $script:GaloreHardwareRuntime
+    if($runtime.Stopping -or $runtime.RAMCleanupTimer) {
         return
     }
     $timer = New-Object System.Windows.Forms.Timer
@@ -115,7 +134,7 @@ function Initialize-RAMCleanupSchedule {
         }
     }.GetNewClosure())
     $timer.Start()
-    $script:RAMCleanupTimer = $timer
+    $runtime.RAMCleanupTimer = $timer
     Write-GaloreLog -Level "INFO" -Component "Hardware" -Message "Scheduled RAM cleanup enabled every 60 minutes."
 }
 
@@ -123,18 +142,23 @@ function Initialize-RAMCleanupSchedule {
 # BACKGROUND HARDWARE MONITOR
 # ============================================================
 
-$script:HardwareJob = $null
-
 function Initialize-HardwareMonitorJob {
-    if($script:HardwareJob) {
-        if($script:HardwareJob.State -eq [System.Management.Automation.JobState]::Running) {
+    $runtime = $script:GaloreHardwareRuntime
+    if($runtime.Stopping) {
+        return
+    }
+    if($runtime.HardwareJob) {
+        if($runtime.HardwareJob.State -in @(
+                [System.Management.Automation.JobState]::Running,
+                [System.Management.Automation.JobState]::NotStarted
+            )) {
             return
         }
-        $staleJobId = $script:HardwareJob.Id
+        $staleJobId = $runtime.HardwareJob.Id
         Stop-Job -Id $staleJobId -ErrorAction SilentlyContinue
         Receive-Job -Id $staleJobId -ErrorAction SilentlyContinue | Out-Null
         Remove-Job -Id $staleJobId -Force -ErrorAction SilentlyContinue
-        $script:HardwareJob = $null
+        $runtime.HardwareJob = $null
     }
     $NvidiaSensorReaderPath = Join-Path $AppRoot "Programs\NvidiaSensor\NvidiaSensorReader.exe"
     if(Test-Path -LiteralPath $NvidiaSensorReaderPath -PathType Leaf) {
@@ -145,7 +169,7 @@ function Initialize-HardwareMonitorJob {
     Write-GaloreLog -Level "INFO" -Component "Hardware" -Message "Background hardware monitor started."
     $hardwareDiagnosticLogPath = Join-Path $AppRoot "Logs\Diagnostics.log"
     $hardwareActivityLogPath = Join-Path $AppRoot "Logs\GaloreLauncher.log"
-    $script:HardwareJob = Start-Job -ArgumentList $AppRoot,$hardwareDiagnosticLogPath,$hardwareActivityLogPath -ScriptBlock {
+    $runtime.HardwareJob = Start-Job -ArgumentList $AppRoot,$hardwareDiagnosticLogPath,$hardwareActivityLogPath -ScriptBlock {
     param($monitorRoot, $diagnosticLogPath, $activityLogPath)
     $ErrorActionPreference = "Stop"
     $loggedHardwareErrors = @{}
@@ -225,6 +249,7 @@ $stackTrace
         Start-Sleep -Seconds 1
     }
     }
+    $runtime.HardwareFailureLogged = $false
 }
 
 # ============================================================
@@ -258,23 +283,51 @@ function ConvertTo-GaloreHardwareSnapshot {
 }
 
 function Initialize-HardwareCacheReader {
+    $runtime = $script:GaloreHardwareRuntime
+    if($runtime.Stopping) {
+        return
+    }
     Initialize-HardwareMonitorJob
-    if($script:HardwareReadTimer -and -not $script:HardwareReadTimer.IsDisposed) {
-        if(-not $script:HardwareReadTimer.Enabled) {
-            $script:HardwareReadTimer.Start()
+    if($runtime.HardwareReadTimer) {
+        if(-not $runtime.HardwareReadTimer.Enabled) {
+            $runtime.HardwareReadTimer.Start()
         }
         return
     }
-    $script:HardwareReadTimer = New-Object System.Windows.Forms.Timer
-    $script:HardwareReadTimer.Interval = 100
-    $script:HardwareReadTimer.Add_Tick({
-        $data = Receive-Job $script:HardwareJob
-        if($data) {
-            $latest = $data | Select-Object -Last 1
-            $script:SystemUsageCache = ConvertTo-GaloreHardwareSnapshot $latest
+    $runtime.HardwareReadTimer = New-Object System.Windows.Forms.Timer
+    $runtime.HardwareReadTimer.Interval = 100
+    $runtime.HardwareReadTimer.Add_Tick({
+        $runtime = $this.Tag
+        if(-not $runtime -or $runtime.Stopping -or -not $runtime.HardwareJob) {
+            return
+        }
+        try {
+            if($runtime.HardwareJob.State -notin @(
+                    [System.Management.Automation.JobState]::Running,
+                    [System.Management.Automation.JobState]::NotStarted
+                )) {
+                Initialize-HardwareMonitorJob
+                if(-not $runtime.HardwareJob -or $runtime.HardwareJob.State -notin @(
+                        [System.Management.Automation.JobState]::Running,
+                        [System.Management.Automation.JobState]::NotStarted
+                    )) {
+                    return
+                }
+            }
+            $data = Receive-Job $runtime.HardwareJob -ErrorAction Stop
+            if($data) {
+                $latest = $data | Select-Object -Last 1
+                $runtime.SystemUsageCache = ConvertTo-GaloreHardwareSnapshot $latest
+            }
+        } catch {
+            if(-not $runtime.HardwareFailureLogged) {
+                $runtime.HardwareFailureLogged = $true
+                Write-LauncherDiagnostic -Exception $_ -Context "Hardware monitor data could not be read."
+            }
         }
     })
-    $script:HardwareReadTimer.Start()
+    $runtime.HardwareReadTimer.Tag = $runtime
+    $runtime.HardwareReadTimer.Start()
 }
 
 # ============================================================
@@ -294,23 +347,39 @@ function Update-LabelText {
 
 function Initialize-SystemMonitorDisplay {
     param($CPULabel, $RAMLabel, $GPULabel, $GPUTempLabel, $Form)
-    $systemTimer = New-Object System.Windows.Forms.Timer
-    $systemTimer.Interval = 250
-    $systemTimer.Add_Tick({
-        if($Form.Visible) {
-            $usage = $script:SystemUsageCache
-            $newCPU = "CPU : " + $usage.CPU + "%"
-            $newRAM = "RAM : " + $usage.RAM + "%"
-            $newGPU = "GPU : " + $usage.GPU + "%"
-            $newTemp = "GPU TEMP : " + $usage.GPUTemp + " C"
-            Update-LabelText $CPULabel $newCPU
-            Update-LabelText $RAMLabel $newRAM
-            Update-LabelText $GPULabel $newGPU
-            Update-LabelText $GPUTempLabel $newTemp
-        }
-    })
+    $runtime = $script:GaloreHardwareRuntime
+    $systemTimer = $runtime.SystemTimer
+    if(-not $systemTimer) {
+        $systemTimer = New-Object System.Windows.Forms.Timer
+        $systemTimer.Interval = 250
+        $systemTimer.Add_Tick({
+            $state = $this.Tag
+            if(-not $state -or -not $state.Form -or $state.Form.IsDisposed -or -not $state.Form.Visible) {
+                return
+            }
+            if($state.Form.Visible) {
+                $usage = $state.Runtime.SystemUsageCache
+                $newCPU = "CPU : " + $usage.CPU + "%"
+                $newRAM = "RAM : " + $usage.RAM + "%"
+                $newGPU = "GPU : " + $usage.GPU + "%"
+                $newTemp = "GPU TEMP : " + $usage.GPUTemp + " C"
+                Update-LabelText $state.CPULabel $newCPU
+                Update-LabelText $state.RAMLabel $newRAM
+                Update-LabelText $state.GPULabel $newGPU
+                Update-LabelText $state.GPUTempLabel $newTemp
+            }
+        })
+        $runtime.SystemTimer = $systemTimer
+    }
+    $systemTimer.Tag = [pscustomobject]@{
+        Runtime = $runtime
+        CPULabel = $CPULabel
+        RAMLabel = $RAMLabel
+        GPULabel = $GPULabel
+        GPUTempLabel = $GPUTempLabel
+        Form = $Form
+    }
     $systemTimer.Start()
-    $script:SystemTimer = $systemTimer
 }
 
 # ============================================================
@@ -318,34 +387,69 @@ function Initialize-SystemMonitorDisplay {
 # ============================================================
 
 function Stop-HardwareMonitor {
-    if($script:RAMCleanupTimer) {
-        $script:RAMCleanupTimer.Stop()
-        $script:RAMCleanupTimer.Dispose()
-        $script:RAMCleanupTimer = $null
-    }
-    if($script:HardwareReadTimer) {
-        $script:HardwareReadTimer.Stop()
-        $script:HardwareReadTimer.Dispose()
-        $script:HardwareReadTimer = $null
-    }
-    if($script:SystemTimer) {
-        $script:SystemTimer.Stop()
-        $script:SystemTimer.Dispose()
-        $script:SystemTimer = $null
-    }
-    if($script:HardwareJob) {
-        Stop-Job -Job $script:HardwareJob -ErrorAction SilentlyContinue
-        Receive-Job -Job $script:HardwareJob -ErrorAction SilentlyContinue | Out-Null
-        Remove-Job -Job $script:HardwareJob -Force -ErrorAction SilentlyContinue
-        $script:HardwareJob = $null
-    }
-    if($script:RAMCleanerPowerShell) {
+    $runtime = $script:GaloreHardwareRuntime
+    $runtime.Stopping = $true
+    if($runtime.RAMCleanupTimer) {
         try {
-            $script:RAMCleanerPowerShell.Stop()
+            $runtime.RAMCleanupTimer.Stop()
+        } catch {
+        } finally {
+            try {
+                $runtime.RAMCleanupTimer.Dispose()
+            } catch {
+            }
+            $runtime.RAMCleanupTimer = $null
+        }
+    }
+    if($runtime.HardwareReadTimer) {
+        try {
+            $runtime.HardwareReadTimer.Stop()
+            $runtime.HardwareReadTimer.Tag = $null
+        } catch {
+        } finally {
+            try {
+                $runtime.HardwareReadTimer.Dispose()
+            } catch {
+            }
+            $runtime.HardwareReadTimer = $null
+        }
+    }
+    if($runtime.SystemTimer) {
+        try {
+            $runtime.SystemTimer.Stop()
+            $runtime.SystemTimer.Tag = $null
+        } catch {
+        } finally {
+            try {
+                $runtime.SystemTimer.Dispose()
+            } catch {
+            }
+            $runtime.SystemTimer = $null
+        }
+    }
+    if($runtime.HardwareJob) {
+        Stop-Job -Job $runtime.HardwareJob -ErrorAction SilentlyContinue
+        Receive-Job -Job $runtime.HardwareJob -ErrorAction SilentlyContinue | Out-Null
+        Remove-Job -Job $runtime.HardwareJob -Force -ErrorAction SilentlyContinue
+        $runtime.HardwareJob = $null
+    }
+    if($runtime.RAMCleanerPowerShell) {
+        try {
+            $runtime.RAMCleanerPowerShell.Stop()
         } catch {
         }
-        $script:RAMCleanerPowerShell.Dispose()
-        $script:RAMCleanerPowerShell = $null
-        $script:RAMCleanerAsyncResult = $null
+        try {
+            if($runtime.RAMCleanerAsyncResult) {
+                $runtime.RAMCleanerPowerShell.EndInvoke($runtime.RAMCleanerAsyncResult) | Out-Null
+            }
+        } catch {
+        } finally {
+            try {
+                $runtime.RAMCleanerPowerShell.Dispose()
+            } catch {
+            }
+            $runtime.RAMCleanerPowerShell = $null
+            $runtime.RAMCleanerAsyncResult = $null
+        }
     }
 }

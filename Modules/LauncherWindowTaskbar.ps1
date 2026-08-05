@@ -5,12 +5,13 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherWindowTaskbar"
     LoadOrder = 250
-    RequiresModules = @("LauncherAlphaOverlay", "LauncherLogging")
+    RequiresModules = @("LauncherAlphaOverlay", "LauncherDomain", "LauncherLogging")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"
     }
     RequiresTypes = [ordered]@{
         "GaloreAlphaOverlay.PerPixelAlphaForm" = "LauncherAlphaOverlay"
+        "GaloreWindowTaskbarRuntimeState" = "LauncherDomain"
     }
     RequiresVariables = @()
     RequiresFolders = @()
@@ -181,10 +182,7 @@ namespace GaloreWindowTaskbar
 }
 "@
 }
-$script:GaloreWindowTaskbar = $null
-$script:GaloreWindowTaskbarTimer = $null
-$script:GaloreWindowTaskbarSignature = $null
-$script:GaloreWindowTaskbarKeyColor = [System.Drawing.Color]::FromArgb(1, 2, 3)
+$script:GaloreWindowTaskbarRuntime = [GaloreWindowTaskbarRuntimeState]::new()
 
 function Get-GaloreWindowTaskbarSignature {
     param([object[]]$Windows)
@@ -196,24 +194,27 @@ function Get-GaloreWindowTaskbarSignature {
 
 function Get-GaloreWindowTaskbarIcon {
     param([uint32]$ProcessId)
+    $process = $null
+    $icon = $null
     try {
         $process = [System.Diagnostics.Process]::GetProcessById($ProcessId)
         $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($process.MainModule.FileName)
-        try {
-            return [GaloreAlphaOverlay.PerPixelAlphaForm]::IconToAlphaBitmap($icon, 32, 32)
-        }
-        finally { if($icon) { $icon.Dispose() } }
+        return [GaloreAlphaOverlay.PerPixelAlphaForm]::IconToAlphaBitmap($icon, 32, 32)
     } catch {
         return $null
+    } finally {
+        if($icon) { $icon.Dispose() }
+        if($process) { $process.Dispose() }
     }
 }
 
 function Set-GaloreWindowTaskbarLocation {
     param([System.Windows.Forms.Form]$Form)
-    if($null -eq $script:GaloreWindowTaskbar -or $script:GaloreWindowTaskbar.IsDisposed -or $Form.IsDisposed -or $Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -or $Form.ClientSize.Width -le 0 -or $Form.ClientSize.Height -le 0) {
+    $runtime = $script:GaloreWindowTaskbarRuntime
+    if($null -eq $runtime.Bar -or $runtime.Bar.IsDisposed -or $Form.IsDisposed -or $Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -or $Form.ClientSize.Width -le 0 -or $Form.ClientSize.Height -le 0) {
         return
     }
-    $bar = $script:GaloreWindowTaskbar
+    $bar = $runtime.Bar
     $top = 44
     $height = [Math]::Max(44, ($Form.ClientSize.Height - $top))
     $screenPoint = $Form.PointToScreen([System.Drawing.Point]::new(0, $top))
@@ -234,17 +235,22 @@ function Set-GaloreWindowTaskbarLocation {
 }
 
 function Update-GaloreWindowTaskbar {
-    if($null -eq $script:GaloreWindowTaskbar -or $script:GaloreWindowTaskbar.IsDisposed) {
+    param($Runtime = $script:GaloreWindowTaskbarRuntime)
+    if($null -eq $Runtime -or $null -eq $Runtime.Bar -or $Runtime.Bar.IsDisposed) {
         return
     }
     try {
         $windows = @([GaloreWindowTaskbar.Native]::GetTaskbarWindows($PID))
         $signature = Get-GaloreWindowTaskbarSignature -Windows $windows
-        if($signature -eq $script:GaloreWindowTaskbarSignature) {
+        if($signature -eq $Runtime.Signature) {
             return
         }
-        $script:GaloreWindowTaskbarSignature = $signature
-        $bar = $script:GaloreWindowTaskbar
+        $Runtime.Signature = $signature
+        $bar = $Runtime.Bar
+        if(-not $Runtime.ToolTip) {
+            $Runtime.ToolTip = New-Object System.Windows.Forms.ToolTip
+        }
+        $Runtime.ToolTip.RemoveAll()
         foreach($control in @($bar.Controls)) {
             if($control.Image) {
                 $image = $control.Image
@@ -264,7 +270,7 @@ function Update-GaloreWindowTaskbar {
             $entry.Location = [System.Drawing.Point]::new(6, $top)
             $entry.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
             $entry.Cursor = [System.Windows.Forms.Cursors]::Hand
-            $entry.BackColor = $script:GaloreWindowTaskbarKeyColor
+            $entry.BackColor = Get-GaloreWindowTaskbarKeyColor -Runtime $Runtime
             $entry.Image = Get-GaloreWindowTaskbarIcon -ProcessId $window.ProcessId
             $entry.Tag = $window
             $entry.Add_Click({
@@ -277,8 +283,7 @@ function Update-GaloreWindowTaskbar {
                     [GaloreWindowTaskbar.Native]::RequestClose($sender.Tag.Handle)
                 }
             })
-            $toolTip = New-Object System.Windows.Forms.ToolTip
-            $toolTip.SetToolTip($entry, "$($window.Title)`nRight-click to close")
+            $Runtime.ToolTip.SetToolTip($entry, "$($window.Title)`nRight-click to close")
             $entry.Visible = $false
             $bar.Controls.Add($entry)
             $top += 40
@@ -290,7 +295,11 @@ function Update-GaloreWindowTaskbar {
 }
 
 function Render-GaloreWindowTaskbar {
-    $bar = $script:GaloreWindowTaskbar
+    param($Runtime = $script:GaloreWindowTaskbarRuntime)
+    if($null -eq $Runtime) {
+        return
+    }
+    $bar = $Runtime.Bar
     if($null -eq $bar -or $bar.IsDisposed -or -not $bar.IsHandleCreated) {
         return
     }
@@ -342,12 +351,13 @@ function Initialize-GaloreWindowTaskbar {
             }
         }
     })
-    $script:GaloreWindowTaskbar = $bar
+    $runtime = $script:GaloreWindowTaskbarRuntime
+    $runtime.Bar = $bar
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 1000
     $timer.Add_Tick({
         try {
-            Update-GaloreWindowTaskbar
+            Update-GaloreWindowTaskbar -Runtime $this.Tag
         } catch {
             try {
                 Write-LauncherDiagnostic -Exception $_ -Context "Window taskbar timer stopped after an internal error."
@@ -355,8 +365,9 @@ function Initialize-GaloreWindowTaskbar {
             }
         }
     }.GetNewClosure())
+    $timer.Tag = $runtime
     $timer.Start()
-    $script:GaloreWindowTaskbarTimer = $timer
+    $runtime.Timer = $timer
     Register-GaloreOverlayLifecycle -Form $Form
     $Form.Add_Move({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
     $Form.Add_SizeChanged({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
@@ -372,16 +383,34 @@ function Initialize-GaloreWindowTaskbar {
 }
 
 function Stop-GaloreWindowTaskbar {
-    if($script:GaloreWindowTaskbarTimer) {
-        $script:GaloreWindowTaskbarTimer.Stop()
-        $script:GaloreWindowTaskbarTimer.Dispose()
-        $script:GaloreWindowTaskbarTimer = $null
+    $runtime = $script:GaloreWindowTaskbarRuntime
+    if($runtime.Timer) {
+        $runtime.Timer.Stop()
+        $runtime.Timer.Tag = $null
+        $runtime.Timer.Dispose()
+        $runtime.Timer = $null
     }
-    if($script:GaloreWindowTaskbar -and -not $script:GaloreWindowTaskbar.IsDisposed) {
-        $script:GaloreWindowTaskbar.Close()
+    if($runtime.Bar -and -not $runtime.Bar.IsDisposed) {
+        $runtime.Bar.Close()
     }
-    $script:GaloreWindowTaskbar = $null
-    $script:GaloreWindowTaskbarSignature = $null
+    if($runtime.ToolTip) {
+        try {
+            $runtime.ToolTip.Dispose()
+        } catch {
+        } finally {
+            $runtime.ToolTip = $null
+        }
+    }
+    $runtime.Bar = $null
+    $runtime.Signature = "<uninitialized>"
+}
+
+function Get-GaloreWindowTaskbarKeyColor {
+    param($Runtime = $script:GaloreWindowTaskbarRuntime)
+    if($null -eq $Runtime.KeyColor) {
+        $Runtime.KeyColor = [System.Drawing.Color]::FromArgb(1, 2, 3)
+    }
+    return $Runtime.KeyColor
 }
 foreach($callbackName in @("Get-GaloreWindowTaskbarIcon", "Set-GaloreWindowTaskbarLocation", "Update-GaloreWindowTaskbar", "Render-GaloreWindowTaskbar", "Stop-GaloreWindowTaskbar")) {
     $callback = Get-Command -Name $callbackName -CommandType Function -ErrorAction Stop

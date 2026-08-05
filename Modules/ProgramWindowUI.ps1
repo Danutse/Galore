@@ -423,7 +423,7 @@ function Initialize-Clock {
 function Restore-GaloreHeaderControlZOrder {
     param([System.Windows.Forms.Form]$Form)
     foreach($control in @(
-        $script:WindowsButton, $script:ClockLabel, $script:DateLabel, $script:TaskManagerButton, $script:CmdButton, $script:GaloreHotkeysButton
+        $Form.Controls["WindowsSearchToggle"], $script:ClockLabel, $script:DateLabel, $script:TaskManagerButton, $script:CmdButton, $script:GaloreHotkeysButton
     )) {
         if($null -ne $control -and -not $control.IsDisposed -and $control.Parent -eq $Form) {
             $control.BringToFront()

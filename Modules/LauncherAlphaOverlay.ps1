@@ -392,7 +392,8 @@ function Start-GaloreOverlayFade {
 
 function Show-GaloreLauncherOverlayBars {
     param([int]$DurationMilliseconds = 220)
-    foreach($bar in @($script:GaloreQuickAccessBar, $script:GaloreWindowTaskbar)) {
+    $taskbarBar = if($script:GaloreWindowTaskbarRuntime) { $script:GaloreWindowTaskbarRuntime.Bar } else { $null }
+    foreach($bar in @($script:GaloreQuickAccessBar, $taskbarBar)) {
         if($null -ne $bar -and -not $bar.IsDisposed) {
             Start-GaloreOverlayFade -Form $bar -TargetOpacity 255 -DurationMilliseconds $DurationMilliseconds
         }
@@ -401,7 +402,8 @@ function Show-GaloreLauncherOverlayBars {
 
 function Hide-GaloreLauncherOverlayBars {
     param([int]$DurationMilliseconds = 170)
-    foreach($bar in @($script:GaloreQuickAccessBar, $script:GaloreWindowTaskbar)) {
+    $taskbarBar = if($script:GaloreWindowTaskbarRuntime) { $script:GaloreWindowTaskbarRuntime.Bar } else { $null }
+    foreach($bar in @($script:GaloreQuickAccessBar, $taskbarBar)) {
         if($null -ne $bar -and -not $bar.IsDisposed -and $bar.Visible) {
             Start-GaloreOverlayFade -Form $bar -TargetOpacity 0 -DurationMilliseconds $DurationMilliseconds -HideOnComplete
         }

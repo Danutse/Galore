@@ -5,7 +5,7 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherStartMenu"
     LoadOrder = 180
-    RequiresModules = @("LauncherSearch", "ProgramWindowUI", "UI")
+    RequiresModules = @("LauncherDomain", "LauncherSearch", "ProgramWindowUI", "UI")
     RequiresFunctions = [ordered]@{
         "Get-SearchResults" = "LauncherSearch"
         "New-SearchBox" = "ProgramWindowUI"
@@ -15,7 +15,9 @@ $GaloreModuleManifest = [ordered]@{
         "Get-ResourceIcon" = "UI"
         "New-WindowsStartButton" = "UI"
     }
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreStartMenuRuntimeState" = "LauncherDomain"
+    }
     RequiresVariables = @()
     RequiresFolders = @("Resources")
     RequiresFiles = @(
@@ -28,29 +30,22 @@ $GaloreModuleManifest = [ordered]@{
 # EMBEDDED SEARCH STATE
 # ============================================================
 
-$script:StartSearchPanel = $null
-$script:StartMenuForm = $null
-$script:SearchPanelAnimationTimer = $null
-$script:SearchPanelTargetVisible = $false
-$script:SearchDelayTimer = $null
-$script:PendingSearch = $null
-$script:StartSearchBox = $null
-$script:StartSearchResults = $null
-$script:WindowsButtonNormalBounds = $null
+$script:GaloreStartMenuRuntime = [GaloreStartMenuRuntimeState]::new()
 
 # ============================================================
 # CLEAR SEARCH RESULT CONTROLS
 # ============================================================
 
 function Clear-StartSearchResults {
-    if($null -eq $script:StartSearchResults -or $script:StartSearchResults.IsDisposed) {
+    $runtime = $script:GaloreStartMenuRuntime
+    if($null -eq $runtime.SearchResults -or $runtime.SearchResults.IsDisposed) {
         return
     }
-    foreach($resultControl in @($script:StartSearchResults.Controls)
+    foreach($resultControl in @($runtime.SearchResults.Controls)
     ) {
         $resultControl.Dispose()
     }
-    $script:StartSearchResults.Controls.Clear()
+    $runtime.SearchResults.Controls.Clear()
 }
 
 # ============================================================
@@ -134,14 +129,15 @@ function Get-SearchResultImage {
 # ============================================================
 
 function Get-StartSearchPanelTop {
-    if($script:StartMenuForm -and -not $script:StartMenuForm.IsDisposed) {
-        $programTitleBar = $script:StartMenuForm.Controls["ProgramTitleBar"]
+    $runtime = $script:GaloreStartMenuRuntime
+    if($runtime.Form -and -not $runtime.Form.IsDisposed) {
+        $programTitleBar = $runtime.Form.Controls["ProgramTitleBar"]
         if($programTitleBar -and -not $programTitleBar.IsDisposed) {
             return [int]$programTitleBar.Bottom
         }
     }
-    if($script:StartSearchPanel -and -not $script:StartSearchPanel.IsDisposed -and $script:StartSearchPanel.Top -gt 0) {
-        return [int]$script:StartSearchPanel.Top
+    if($runtime.SearchPanel -and -not $runtime.SearchPanel.IsDisposed -and $runtime.SearchPanel.Top -gt 0) {
+        return [int]$runtime.SearchPanel.Top
     }
     return 40
 }
@@ -152,23 +148,24 @@ function Get-StartSearchPanelTop {
 
 function Set-WindowsSearchToggleBounds {
     param([int]$PanelLeft, [bool]$Compact)
-    if($null -eq $script:WindowsButton -or $script:WindowsButton.IsDisposed) {
+    $runtime = $script:GaloreStartMenuRuntime
+    if($null -eq $runtime.WindowsButton -or $runtime.WindowsButton.IsDisposed) {
         return
     }
     if($Compact) {
-        if($null -eq $script:WindowsButtonNormalBounds) {
-            $script:WindowsButtonNormalBounds = New-Object System.Drawing.Rectangle($script:WindowsButton.Left, $script:WindowsButton.Top, $script:WindowsButton.Width, $script:WindowsButton.Height)
+        if($null -eq $runtime.WindowsButtonNormalBounds) {
+            $runtime.WindowsButtonNormalBounds = New-Object System.Drawing.Rectangle($runtime.WindowsButton.Left, $runtime.WindowsButton.Top, $runtime.WindowsButton.Width, $runtime.WindowsButton.Height)
         }
         $panelTop = Get-StartSearchPanelTop
         $toggleSize = [Math]::Max(32, [int][Math]::Round($panelTop * 0.8))
         $toggleMargin = [Math]::Max(4, [int][Math]::Round($panelTop * 0.1))
-        $script:WindowsButton.Bounds = New-Object System.Drawing.Rectangle([Math]::Max(0, ($PanelLeft - $toggleSize - $toggleMargin)), ($panelTop + $toggleMargin), $toggleSize, $toggleSize)
-        $script:WindowsButton.BringToFront()
+        $runtime.WindowsButton.Bounds = New-Object System.Drawing.Rectangle([Math]::Max(0, ($PanelLeft - $toggleSize - $toggleMargin)), ($panelTop + $toggleMargin), $toggleSize, $toggleSize)
+        $runtime.WindowsButton.BringToFront()
         return
     }
-    if($null -ne $script:WindowsButtonNormalBounds) {
-        $script:WindowsButton.Bounds = $script:WindowsButtonNormalBounds
-        $script:WindowsButton.BringToFront()
+    if($null -ne $runtime.WindowsButtonNormalBounds) {
+        $runtime.WindowsButton.Bounds = $runtime.WindowsButtonNormalBounds
+        $runtime.WindowsButton.BringToFront()
     }
 }
 
@@ -177,13 +174,14 @@ function Set-WindowsSearchToggleBounds {
 # ============================================================
 
 function Stop-StartSearchPanelAnimation {
-    if($null -eq $script:SearchPanelAnimationTimer) {
+    $runtime = $script:GaloreStartMenuRuntime
+    if($null -eq $runtime.AnimationTimer) {
         return
     }
-    $script:SearchPanelAnimationTimer.Stop()
-    $script:SearchPanelAnimationTimer.Tag = $null
-    $script:SearchPanelAnimationTimer.Dispose()
-    $script:SearchPanelAnimationTimer = $null
+    $runtime.AnimationTimer.Stop()
+    $runtime.AnimationTimer.Tag = $null
+    $runtime.AnimationTimer.Dispose()
+    $runtime.AnimationTimer = $null
 }
 
 # ============================================================
@@ -191,18 +189,19 @@ function Stop-StartSearchPanelAnimation {
 # ============================================================
 
 function Set-StartSearchPanelBounds {
-    param([bool]$ShowPanel = $script:SearchPanelTargetVisible)
-    if($null -eq $script:StartMenuForm -or $script:StartMenuForm.IsDisposed -or $null -eq $script:StartSearchPanel -or $script:StartSearchPanel.IsDisposed) {
+    param([bool]$ShowPanel = $script:GaloreStartMenuRuntime.TargetVisible)
+    $runtime = $script:GaloreStartMenuRuntime
+    if($null -eq $runtime.Form -or $runtime.Form.IsDisposed -or $null -eq $runtime.SearchPanel -or $runtime.SearchPanel.IsDisposed) {
         return
     }
     $panelTop = Get-StartSearchPanelTop
     $panelLeft = if($ShowPanel) {
-        [Math]::Max(0, ($script:StartMenuForm.ClientSize.Width - $script:StartSearchPanel.Width))
+        [Math]::Max(0, ($runtime.Form.ClientSize.Width - $runtime.SearchPanel.Width))
     } else {
-        $script:StartMenuForm.ClientSize.Width
+        $runtime.Form.ClientSize.Width
     }
-    $script:StartSearchPanel.Location = New-Object System.Drawing.Point($panelLeft, $panelTop)
-    $script:StartSearchPanel.Height = [Math]::Max(0, ($script:StartMenuForm.ClientSize.Height - $panelTop))
+    $runtime.SearchPanel.Location = New-Object System.Drawing.Point($panelLeft, $panelTop)
+    $runtime.SearchPanel.Height = [Math]::Max(0, ($runtime.Form.ClientSize.Height - $panelTop))
 }
 
 # ============================================================
@@ -211,12 +210,13 @@ function Set-StartSearchPanelBounds {
 
 function Start-SearchPanelSlideAnimation {
     param([bool]$ShowPanel, [int]$DurationMilliseconds = 180)
-    if($null -eq $script:StartMenuForm -or $script:StartMenuForm.IsDisposed -or $null -eq $script:StartSearchPanel -or $script:StartSearchPanel.IsDisposed) {
+    $runtime = $script:GaloreStartMenuRuntime
+    if($null -eq $runtime.Form -or $runtime.Form.IsDisposed -or $null -eq $runtime.SearchPanel -or $runtime.SearchPanel.IsDisposed) {
         return
     }
     Stop-StartSearchPanelAnimation
-    $panel = $script:StartSearchPanel
-    $form = $script:StartMenuForm
+    $panel = $runtime.SearchPanel
+    $form = $runtime.Form
     if($ShowPanel) {
         if(-not $panel.Visible) {
             Set-StartSearchPanelBounds -ShowPanel $false
@@ -252,16 +252,18 @@ function Start-SearchPanelSlideAnimation {
         ShowPanel = $ShowPanel
         DurationMilliseconds = $DurationMilliseconds
         Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        Runtime = $runtime
     }
     $animationTimer.Add_Tick({
         $timer = $this
         $state = $timer.Tag
         if($null -eq $state -or $null -eq $state.Panel -or $state.Panel.IsDisposed -or $null -eq $state.Form -or $state.Form.IsDisposed) {
+            $runtime = if($null -ne $state) { $state.Runtime } else { $null }
             $timer.Stop()
             $timer.Tag = $null
             $timer.Dispose()
-            if($script:SearchPanelAnimationTimer -eq $timer) {
-                $script:SearchPanelAnimationTimer = $null
+            if($null -ne $runtime -and $runtime.AnimationTimer -eq $timer) {
+                $runtime.AnimationTimer = $null
             }
             return
         }
@@ -284,16 +286,16 @@ function Start-SearchPanelSlideAnimation {
         $state.Panel.Visible = $state.ShowPanel
         $timer.Stop()
         $timer.Tag = $null
-        if($script:SearchPanelAnimationTimer -eq $timer) {
-            $script:SearchPanelAnimationTimer = $null
+        if($state.Runtime.AnimationTimer -eq $timer) {
+            $state.Runtime.AnimationTimer = $null
         }
         $timer.Dispose()
         if($state.ShowPanel) {
             Set-WindowsSearchToggleBounds -PanelLeft $state.Panel.Left -Compact $true
-            if($script:StartMenuForm -and -not $script:StartMenuForm.IsDisposed -and $script:StartSearchBox -and -not $script:StartSearchBox.IsDisposed) {
-                $script:StartMenuForm.Activate()
-                $script:StartSearchBox.Select()
-                $script:StartSearchBox.Focus() | Out-Null
+            if($state.Runtime.Form -and -not $state.Runtime.Form.IsDisposed -and $state.Runtime.SearchBox -and -not $state.Runtime.SearchBox.IsDisposed) {
+                $state.Runtime.Form.Activate()
+                $state.Runtime.SearchBox.Select()
+                $state.Runtime.SearchBox.Focus() | Out-Null
             }
         } else {
             Set-WindowsSearchToggleBounds -PanelLeft $state.Panel.Left -Compact $false
@@ -301,7 +303,7 @@ function Start-SearchPanelSlideAnimation {
             $state.Form.Focus() | Out-Null
         }
     })
-    $script:SearchPanelAnimationTimer = $animationTimer
+    $runtime.AnimationTimer = $animationTimer
     $animationTimer.Start()
 }
 
@@ -310,18 +312,19 @@ function Start-SearchPanelSlideAnimation {
 # ============================================================
 
 function Show-StartSearchWindowAnimated {
-    param([System.Windows.Forms.Panel]$Panel = $script:StartSearchPanel, [int]$DurationMilliseconds = 180)
+    param([System.Windows.Forms.Panel]$Panel = $script:GaloreStartMenuRuntime.SearchPanel, [int]$DurationMilliseconds = 180)
+    $runtime = $script:GaloreStartMenuRuntime
     if($null -eq $Panel -or $Panel.IsDisposed) {
         return
     }
-    $script:SearchPanelTargetVisible = $true
+    $runtime.TargetVisible = $true
     Start-SearchPanelSlideAnimation -ShowPanel $true -DurationMilliseconds $DurationMilliseconds
-    if($script:StartSearchBox -and -not $script:StartSearchBox.IsDisposed) {
-        if($script:StartMenuForm -and -not $script:StartMenuForm.IsDisposed) {
-            $script:StartMenuForm.Activate()
+    if($runtime.SearchBox -and -not $runtime.SearchBox.IsDisposed) {
+        if($runtime.Form -and -not $runtime.Form.IsDisposed) {
+            $runtime.Form.Activate()
         }
-        $script:StartSearchBox.Select()
-        $script:StartSearchBox.Focus() | Out-Null
+        $runtime.SearchBox.Select()
+        $runtime.SearchBox.Focus() | Out-Null
     }
 }
 
@@ -330,9 +333,10 @@ function Show-StartSearchWindowAnimated {
 # ============================================================
 
 function Close-StartSearchWindowAnimated {
-    param([System.Windows.Forms.Panel]$Panel = $script:StartSearchPanel, [int]$DurationMilliseconds = 160)
-    $wasTargetVisible = $script:SearchPanelTargetVisible
-    $script:SearchPanelTargetVisible = $false
+    param([System.Windows.Forms.Panel]$Panel = $script:GaloreStartMenuRuntime.SearchPanel, [int]$DurationMilliseconds = 160)
+    $runtime = $script:GaloreStartMenuRuntime
+    $wasTargetVisible = $runtime.TargetVisible
+    $runtime.TargetVisible = $false
     if($null -eq $Panel -or $Panel.IsDisposed) {
         return
     }
@@ -348,8 +352,9 @@ function Close-StartSearchWindowAnimated {
 
 function Show-StartSearchWindow {
     param([System.Windows.Forms.Form]$Form)
-    if($script:StartSearchPanel -and -not $script:StartSearchPanel.IsDisposed) {
-        if($script:SearchPanelTargetVisible) {
+    $runtime = $script:GaloreStartMenuRuntime
+    if($runtime.SearchPanel -and -not $runtime.SearchPanel.IsDisposed) {
+        if($runtime.TargetVisible) {
             Close-StartSearchWindowAnimated
         } else {
             Show-StartSearchWindowAnimated
@@ -357,33 +362,36 @@ function Show-StartSearchWindow {
         return
     }
     $searchPanel = New-SearchPanelUI -Form $Form
-    $script:StartSearchPanel = $searchPanel
+    $runtime.SearchPanel = $searchPanel
     $searchBox = New-SearchBox -SearchPanel $searchPanel
     $searchResults = New-SearchResultsPanel -SearchPanel $searchPanel
-    $script:StartSearchBox = $searchBox
-    $script:StartSearchResults = $searchResults
-    $script:SearchDelayTimer = New-Object System.Windows.Forms.Timer
-    $script:SearchDelayTimer.Interval = 250
-    $script:PendingSearch = $null
-    $script:StartSearchBox.Add_KeyDown({
+    $runtime.SearchBox = $searchBox
+    $runtime.SearchResults = $searchResults
+    $runtime.SearchDelayTimer = New-Object System.Windows.Forms.Timer
+    $runtime.SearchDelayTimer.Interval = 250
+    $runtime.SearchDelayTimer.Tag = $runtime
+    $runtime.PendingSearch = $null
+    $runtime.SearchBox.Add_KeyDown({
         param($sender, $e)
         if($e.KeyCode -eq [System.Windows.Forms.Keys]::Escape) {
             $e.SuppressKeyPress = $true
             Close-StartSearchWindowAnimated
         }
     })
-    $script:StartSearchBox.Add_TextChanged({
-        if($null -eq $script:SearchDelayTimer) {
+    $runtime.SearchBox.Add_TextChanged({
+        if($null -eq $runtime -or $null -eq $runtime.SearchDelayTimer) {
             return
         }
-        $script:PendingSearch = $script:StartSearchBox.Text
-        $script:SearchDelayTimer.Stop()
-        $script:SearchDelayTimer.Start()
-    })
-    $script:SearchDelayTimer.Add_Tick({
-        $script:SearchDelayTimer.Stop()
+        $runtime.PendingSearch = $this.Text
+        $runtime.SearchDelayTimer.Stop()
+        $runtime.SearchDelayTimer.Start()
+    }.GetNewClosure())
+    $runtime.SearchDelayTimer.Add_Tick({
+        $runtime = $this.Tag
+        if($null -eq $runtime) { return }
+        $this.Stop()
         Clear-StartSearchResults
-        $query = [string]$script:PendingSearch
+        $query = [string]$runtime.PendingSearch
         $query = $query.Trim()
         if([string]::IsNullOrWhiteSpace($query) -or $query.Length -lt 2) {
             return
@@ -435,7 +443,11 @@ function Show-StartSearchWindow {
                     }
                 }
             })
-            $script:StartSearchResults.Controls.Add($resultButton)
+            if($runtime.SearchResults -and -not $runtime.SearchResults.IsDisposed) {
+                $runtime.SearchResults.Controls.Add($resultButton)
+            } else {
+                $resultButton.Dispose()
+            }
         }
     })
     Show-StartSearchWindowAnimated
@@ -447,25 +459,33 @@ function Show-StartSearchWindow {
 
 function Initialize-StartMenu {
     param([System.Windows.Forms.Form]$Form)
-    if($script:StartMenuForm -ne $Form) {
-        $script:StartMenuForm = $Form
-        $script:StartMenuForm.Add_Resize({
-            if($script:StartSearchPanel -and -not $script:StartSearchPanel.IsDisposed) {
+    $runtime = $script:GaloreStartMenuRuntime
+    if($runtime.Form -eq $Form -and $runtime.WindowsButton -and -not $runtime.WindowsButton.IsDisposed) {
+        return
+    }
+    if($runtime.Form -and $runtime.Form -ne $Form) {
+        Stop-StartMenuResources
+    }
+    if($runtime.Form -ne $Form) {
+        $runtime.Form = $Form
+        $runtime.Form.Add_Resize({
+            $runtime = $script:GaloreStartMenuRuntime
+            if($runtime.SearchPanel -and -not $runtime.SearchPanel.IsDisposed) {
                 Stop-StartSearchPanelAnimation
-                Set-StartSearchPanelBounds -ShowPanel $script:SearchPanelTargetVisible
-                $script:StartSearchPanel.Visible = $script:SearchPanelTargetVisible
-                Set-WindowsSearchToggleBounds -PanelLeft $script:StartSearchPanel.Left -Compact $script:SearchPanelTargetVisible
+                Set-StartSearchPanelBounds -ShowPanel $runtime.TargetVisible
+                $runtime.SearchPanel.Visible = $runtime.TargetVisible
+                Set-WindowsSearchToggleBounds -PanelLeft $runtime.SearchPanel.Left -Compact $runtime.TargetVisible
             }
         })
     }
     $WindowsUI = New-WindowsStartButton
-    $script:WindowsButton = $WindowsUI.Button
-    $script:WindowsButton.Name = "WindowsSearchToggle"
-    $script:WindowsButton.AccessibleName = "WindowsSearchToggle"
-    $script:WindowsTimer = $WindowsUI.Timer
-    $Form.Controls.Add($script:WindowsButton)
-    $script:WindowsButton.Add_Click({
-        Show-StartSearchWindow -Form $script:StartMenuForm
+    $runtime.WindowsButton = $WindowsUI.Button
+    $runtime.WindowsButton.Name = "WindowsSearchToggle"
+    $runtime.WindowsButton.AccessibleName = "WindowsSearchToggle"
+    $runtime.WindowsTimer = $WindowsUI.Timer
+    $Form.Controls.Add($runtime.WindowsButton)
+    $runtime.WindowsButton.Add_Click({
+        Show-StartSearchWindow -Form $script:GaloreStartMenuRuntime.Form
     })
 }
 
@@ -474,27 +494,33 @@ function Initialize-StartMenu {
 # ============================================================
 
 function Stop-StartMenuResources {
+    $runtime = $script:GaloreStartMenuRuntime
     Stop-StartSearchPanelAnimation
-    $script:SearchPanelTargetVisible = $false
-    if($script:SearchDelayTimer) {
-        $script:SearchDelayTimer.Stop()
-        $script:SearchDelayTimer.Dispose()
-        $script:SearchDelayTimer = $null
+    $runtime.TargetVisible = $false
+    if($runtime.SearchDelayTimer) {
+        $runtime.SearchDelayTimer.Stop()
+        $runtime.SearchDelayTimer.Tag = $null
+        $runtime.SearchDelayTimer.Dispose()
+        $runtime.SearchDelayTimer = $null
     }
     Clear-StartSearchResults
-    if($script:StartSearchPanel -and -not $script:StartSearchPanel.IsDisposed) {
-        $script:StartSearchPanel.Dispose()
+    if($runtime.SearchPanel -and -not $runtime.SearchPanel.IsDisposed) {
+        $runtime.SearchPanel.Dispose()
     }
-    if($script:WindowsTimer) {
-        $script:WindowsTimer.Stop()
-        $script:WindowsTimer.Dispose()
-        $script:WindowsTimer = $null
+    if($runtime.WindowsTimer) {
+        $runtime.WindowsTimer.Stop()
+        $runtime.WindowsTimer.Tag = $null
+        $runtime.WindowsTimer.Dispose()
+        $runtime.WindowsTimer = $null
     }
-    $script:StartSearchBox = $null
-    $script:StartSearchResults = $null
-    $script:PendingSearch = $null
-    $script:StartSearchPanel = $null
-    $script:WindowsButtonNormalBounds = $null
-    $script:WindowsButton = $null
-    $script:StartMenuForm = $null
+    if($runtime.WindowsButton -and -not $runtime.WindowsButton.IsDisposed) {
+        $runtime.WindowsButton.Dispose()
+    }
+    $runtime.SearchBox = $null
+    $runtime.SearchResults = $null
+    $runtime.PendingSearch = $null
+    $runtime.SearchPanel = $null
+    $runtime.WindowsButtonNormalBounds = $null
+    $runtime.WindowsButton = $null
+    $runtime.Form = $null
 }

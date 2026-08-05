@@ -5,20 +5,24 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherBrowser"
     LoadOrder = 200
-    RequiresModules = @("LauncherConfiguration", "LauncherLogging", "LauncherSettings")
+    RequiresModules = @("LauncherConfiguration", "LauncherDomain", "LauncherLogging", "LauncherPopup", "LauncherSettings")
     RequiresFunctions = [ordered]@{
         "Get-InstalledBrowsers" = "LauncherConfiguration"
         "Write-LauncherDiagnostic" = "LauncherLogging"
         "Load-WindowSettings" = "LauncherSettings"
+        "Close-GalorePopupAnimated" = "LauncherPopup"
+        "Clear-GalorePopupOwner" = "LauncherPopup"
+        "Start-GalorePopupFade" = "LauncherPopup"
+        "Stop-GalorePopupFade" = "LauncherPopup"
     }
-    RequiresTypes = [ordered]@{}
-    RequiresVariables = @("AppRoot")
+    RequiresTypes = [ordered]@{
+        "GalorePopupRuntimeState" = "LauncherDomain"
+    }
+    RequiresVariables = @("AppRoot", "GalorePopupRuntime")
     RequiresFolders = @("resources")
     RequiresFiles = @()
     ProvidesTypes = @()
 }
-$script:BrowserSelectorForm = $null
-
 # ============================================================
 # BROWSER SELECTION STATE
 # ============================================================
@@ -66,71 +70,11 @@ function Initialize-GaloreBrowser {
 # BROWSER SELECTOR
 # ============================================================
 
-function Start-GaloreBrowserSelectorFade {
-    param([System.Windows.Forms.Form]$Form, [double]$TargetOpacity, [switch]$CloseOnComplete)
-    if($null -eq $Form -or $Form.IsDisposed) {
-        return
-    }
-    $selectorContext = $Form.Tag
-    if($selectorContext.FadeTimer) {
-        $selectorContext.FadeTimer.Stop()
-        $selectorContext.FadeTimer.Dispose()
-        $selectorContext.FadeTimer = $null
-    }
-    $fadeTimer = New-Object System.Windows.Forms.Timer
-    $fadeTimer.Interval = 15
-    $fadeTimer.Tag = [pscustomobject]@{
-        Form = $Form
-        SelectorContext = $selectorContext
-        StartOpacity = [double]$Form.Opacity
-        TargetOpacity = [Math]::Max(0.0, [Math]::Min(1.0, $TargetOpacity))
-        Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-        CloseOnComplete = [bool]$CloseOnComplete
-    }
-    $fadeTimer.Add_Tick({
-        $timer = $this
-        $state = $timer.Tag
-        if($null -eq $state -or $null -eq $state.Form -or $state.Form.IsDisposed) {
-            $timer.Stop()
-            $timer.Dispose()
-            return
-        }
-        $progress = [Math]::Min(1.0, ($state.Stopwatch.Elapsed.TotalMilliseconds / 180))
-        $easedProgress = $progress * $progress * (3 - (2 * $progress))
-        $state.Form.Opacity = $state.StartOpacity + (($state.TargetOpacity - $state.StartOpacity) * $easedProgress)
-        if($progress -lt 1) {
-            return
-        }
-        $state.Form.Opacity = $state.TargetOpacity
-        $timer.Stop()
-        $timer.Tag = $null
-        $timer.Dispose()
-        $state.SelectorContext.FadeTimer = $null
-        if($state.CloseOnComplete -and -not $state.Form.IsDisposed) {
-            $state.Form.Close()
-        }
-    })
-    $selectorContext.FadeTimer = $fadeTimer
-    $fadeTimer.Start()
-}
-
-function Close-GaloreBrowserSelectorAnimated {
-    param([System.Windows.Forms.Form]$Form)
-    if($null -eq $Form -or $Form.IsDisposed) {
-        return
-    }
-    $selectorContext = $Form.Tag
-    if($selectorContext.IsClosing) {
-        return
-    }
-    $selectorContext.IsClosing = $true
-    Start-GaloreBrowserSelectorFade -Form $Form -TargetOpacity 0 -CloseOnComplete
-}
-
 function Show-GaloreBrowserSelector {
     param($Programs, $BrowserLabel, [string]$AppRoot)
-    if($script:BrowserSelectorForm -and -not $script:BrowserSelectorForm.IsDisposed) {
-        $script:BrowserSelectorForm.Activate()
+    $runtime = $script:GalorePopupRuntime
+    if($runtime.SelectorForm -and -not $runtime.SelectorForm.IsDisposed) {
+        $runtime.SelectorForm.Activate()
         return
     }
     $browsers = Get-InstalledBrowsers
@@ -142,17 +86,22 @@ function Show-GaloreBrowserSelector {
     $selector.TransparencyKey = [System.Drawing.Color]::Empty
     $selector.TopMost = $true
     $selectorImage = $null
+    $choiceFont = $null
     $selectorImagePath = Get-GaloreResourcePath "browserselector.png"
     if(Test-Path -LiteralPath $selectorImagePath -PathType Leaf) {
+        $sourceImage = $null
         try {
             $sourceImage = [System.Drawing.Image]::FromFile($selectorImagePath)
             $selectorImage = New-Object System.Drawing.Bitmap($sourceImage)
-            $sourceImage.Dispose()
             $selector.BackgroundImage = $selectorImage
             $selector.BackgroundImageLayout = [System.Windows.Forms.ImageLayout]::None
             $selector.ClientSize = New-Object System.Drawing.Size($selectorImage.Width, $selectorImage.Height)
         } catch {
             Write-LauncherDiagnostic -Exception $_ -Context "Failed to load browser selector artwork from '$selectorImagePath'."
+        } finally {
+            if($sourceImage) {
+                $sourceImage.Dispose()
+            }
         }
     }
     if($null -eq $selectorImage) {
@@ -163,11 +112,13 @@ function Show-GaloreBrowserSelector {
         Programs = $Programs
         BrowserLabel = $BrowserLabel
         AppRoot = $AppRoot
+        Runtime = $runtime
         SelectorImage = $selectorImage
+        ChoiceFont = $choiceFont
         FadeTimer = $null
         IsClosing = $false
     }
-    $script:BrowserSelectorForm = $selector
+    $runtime.SelectorForm = $selector
     $top = 20
     $selectorContentWidth = [Math]::Max(1, ([int]$selector.ClientSize.Width - 30))
     if($browsers.Count -eq 0) {
@@ -179,6 +130,8 @@ function Show-GaloreBrowserSelector {
         $emptyLabel.Bounds = [System.Drawing.Rectangle]::new(15, $top, $selectorContentWidth, 30)
         $selector.Controls.Add($emptyLabel)
     } else {
+        $choiceFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+        $selector.Tag.ChoiceFont = $choiceFont
         foreach($browser in $browsers.Values) {
             $browserChoice = New-Object System.Windows.Forms.Label
             $browserChoice.Text = $browser.DisplayName
@@ -186,7 +139,7 @@ function Show-GaloreBrowserSelector {
             $browserChoice.ForeColor = [System.Drawing.Color]::White
             $browserChoice.BackColor = [System.Drawing.Color]::Transparent
             $browserChoice.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-            $browserChoice.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+            $browserChoice.Font = $choiceFont
             $browserChoice.Cursor = [System.Windows.Forms.Cursors]::Hand
             $browserChoice.Bounds = [System.Drawing.Rectangle]::new(15, $top, $selectorContentWidth, 30)
             $browserChoice.Add_MouseEnter({
@@ -202,7 +155,7 @@ function Show-GaloreBrowserSelector {
                 if($selectorContext.BrowserLabel -and -not $selectorContext.BrowserLabel.IsDisposed) {
                     $selectorContext.BrowserLabel.Text = "Browser: $($selectedBrowser.DisplayName)"
                 }
-                Close-GaloreBrowserSelectorAnimated -Form $this.FindForm()
+                Close-GalorePopupAnimated -Form $this.FindForm()
             })
             $selector.Controls.Add($browserChoice)
             $top += 34
@@ -210,28 +163,36 @@ function Show-GaloreBrowserSelector {
     }
     $selector.Add_Deactivate({
         if(-not $this.IsDisposed) {
-            Close-GaloreBrowserSelectorAnimated -Form $this
+            Close-GalorePopupAnimated -Form $this
         }
     })
     $selector.Add_FormClosing({
         param($sender, $e)
         $selectorContext = $this.Tag
-        if(-not $selectorContext.IsClosing) {
-            $e.Cancel = $true
-            Close-GaloreBrowserSelectorAnimated -Form $this
+        if($null -eq $selectorContext) {
+            return
         }
+        if($e.CloseReason -eq [System.Windows.Forms.CloseReason]::UserClosing -and -not $selectorContext.IsClosing) {
+            $e.Cancel = $true
+            Close-GalorePopupAnimated -Form $this
+            return
+        }
+        $selectorContext.IsClosing = $true
     })
     $selector.Add_FormClosed({
         $selectorContext = $this.Tag
-        if($selectorContext.FadeTimer) {
-            $selectorContext.FadeTimer.Stop()
-            $selectorContext.FadeTimer.Dispose()
-            $selectorContext.FadeTimer = $null
+        if($selectorContext) {
+            Stop-GalorePopupFade -Form $this
+            if($selectorContext.ChoiceFont) {
+                $selectorContext.ChoiceFont.Dispose()
+            }
+            if($selectorContext.SelectorImage) {
+                $selectorContext.SelectorImage.Dispose()
+            }
+            $this.BackgroundImage = $null
+            Clear-GalorePopupOwner -Runtime $selectorContext.Runtime -PropertyName "SelectorForm" -Form $this
+            $this.Tag = $null
         }
-        if($selectorContext.SelectorImage) {
-            $selectorContext.SelectorImage.Dispose()
-        }
-        $script:BrowserSelectorForm = $null
     })
     $owner = if($BrowserLabel) {
         $BrowserLabel.FindForm()
@@ -253,10 +214,26 @@ function Show-GaloreBrowserSelector {
         $selector.Location = [System.Drawing.Point]::new($selectorX, $selectorY)
         $selector.Opacity = 0
         $selector.Show($owner)
-        Start-GaloreBrowserSelectorFade -Form $selector -TargetOpacity 1
+        Start-GalorePopupFade -Form $selector -TargetOpacity 1
     } else {
         $selector.Opacity = 0
         $selector.Show()
-        Start-GaloreBrowserSelectorFade -Form $selector -TargetOpacity 1
+        Start-GalorePopupFade -Form $selector -TargetOpacity 1
     }
+}
+
+function Stop-GaloreBrowserResources {
+    $runtime = $script:GalorePopupRuntime
+    $selector = $runtime.SelectorForm
+    if($null -eq $selector) {
+        return
+    }
+    if(-not $selector.IsDisposed) {
+        if($selector.Tag) {
+            $selector.Tag.IsClosing = $true
+        }
+        Stop-GalorePopupFade -Form $selector
+        $selector.Close()
+    }
+    Clear-GalorePopupOwner -Runtime $runtime -PropertyName "SelectorForm" -Form $selector
 }
