@@ -1227,7 +1227,7 @@ try
             -iconFile (Join-Path $ResourceRoot "Galore.ico") `
             -title "Galore Launcher" `
             -description "Interface Manager" `
-            -version "1.0.0.0" `
+            -version "1.0.1.0" `
             -copyright "Copyright © 2026 All Rights Reserved"
 
 

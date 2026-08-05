@@ -243,7 +243,7 @@ if(-not $SkipApplicationCompile)
         -company "Galore Inc." `
         -product "Galore Launcher" `
         -trademark "Galore" `
-        -version "1.0.0.0" `
+        -version "1.0.1.0" `
         -copyright "Copyright (c) 2026 Galore Inc."
 
 
@@ -403,7 +403,7 @@ try
     -company "Galore Inc." `
     -product "Galore Launcher Uninstaller" `
     -trademark "Galore" `
-    -version "1.0.0.0" `
+    -version "1.0.1.0" `
     -copyright "Copyright (c) 2026 Galore Inc."
 
 
@@ -509,7 +509,7 @@ try
     -company "Galore Inc." `
     -product "Galore Launcher Setup" `
     -trademark "Galore" `
-    -version "1.0.0.0" `
+    -version "1.0.1.0" `
     -copyright "Copyright (c) 2026 Galore Inc."
 
 
