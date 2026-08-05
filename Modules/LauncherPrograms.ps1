@@ -5,7 +5,7 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherPrograms"
     LoadOrder = 110
-    RequiresModules = @("LauncherBrowser", "LauncherDesktop", "LauncherEvents", "LauncherLogging", "LauncherMaintenance", "LauncherProcess", "LauncherSettings", "LauncherStartup", "UI")
+    RequiresModules = @("LauncherBrowser", "LauncherDesktop", "LauncherDomain", "LauncherEvents", "LauncherLogging", "LauncherMaintenance", "LauncherProcess", "LauncherSettings", "LauncherStartup", "UI")
     RequiresFunctions = [ordered]@{
         "New-StartupToggle" = "LauncherDesktop"
         "Register-ProgramNameToggleEvent" = "LauncherEvents"
@@ -22,7 +22,9 @@ $GaloreModuleManifest = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"
         "Write-GaloreLog" = "LauncherLogging"
     }
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreProgramStatusRuntime" = "LauncherDomain"
+    }
     RequiresVariables = @("AppRoot")
     RequiresFolders = @()
     RequiresFiles = @()
@@ -54,6 +56,7 @@ function Apply-GaloreProgramOverrides {
         $program.DisplayName = [string]$override.DisplayName
     }
 }
+$script:GaloreProgramStatusRuntime = [GaloreProgramStatusRuntime]::new()
 
 function Get-GaloreProgramDisplayText {
     param([string]$Name, $Program)
@@ -352,10 +355,8 @@ function Update-ProgramStatus {
 function Refresh-StatusDelayed {
     param($Programs, $Statuses, [string[]]$ProgramsToUpdate)
     $refreshTimer = New-Object System.Windows.Forms.Timer
-    if($null -eq $script:StatusRefreshTimers) {
-        $script:StatusRefreshTimers = New-Object System.Collections.ArrayList
-    }
-    $script:StatusRefreshTimers.Add($refreshTimer) | Out-Null
+    $runtime = $script:GaloreProgramStatusRuntime
+    $runtime.RefreshTimers.Add($refreshTimer) | Out-Null
     $refreshTimer.Interval = 1200
     $refreshTimer.Tag = @{
         Programs = $Programs
@@ -363,6 +364,7 @@ function Refresh-StatusDelayed {
         ProgramsToUpdate = @(
             $ProgramsToUpdate
         )
+        Runtime = $runtime
     }
     $refreshTimer.Add_Tick({
         $timer = $this
@@ -371,8 +373,8 @@ function Refresh-StatusDelayed {
         try {
             Update-ProgramStatus -Programs $state.Programs -Statuses $state.Statuses -ProgramsToUpdate $state.ProgramsToUpdate
         } finally {
-            if($script:StatusRefreshTimers) {
-                $script:StatusRefreshTimers.Remove($timer) | Out-Null
+            if($state.Runtime) {
+                $state.Runtime.RefreshTimers.Remove($timer) | Out-Null
             }
             $timer.Tag = $null
             $timer.Dispose()
@@ -398,6 +400,17 @@ function Initialize-ProgramStatus {
 
 function Initialize-StatusTimer {
     param($Programs, $Statuses)
+    $runtime = $script:GaloreProgramStatusRuntime
+    if($runtime.StatusTimer) {
+        $runtime.StatusTimer.Tag = @{
+            Programs = $Programs
+            Statuses = $Statuses
+        }
+        if(-not $runtime.StatusTimer.Enabled) {
+            $runtime.StatusTimer.Start()
+        }
+        return $runtime.StatusTimer
+    }
     $statusTimer = New-Object System.Windows.Forms.Timer
     $statusTimer.Interval = 30000
     $statusTimer.Tag = @{
@@ -411,7 +424,7 @@ function Initialize-StatusTimer {
         )
     })
     $statusTimer.Start()
-    $script:ProgramStatusTimer = $statusTimer
+    $runtime.StatusTimer = $statusTimer
     return $statusTimer
 }
 
@@ -420,14 +433,15 @@ function Initialize-StatusTimer {
 # ============================================================
 
 function Stop-ProgramStatusResources {
-    if($script:ProgramStatusTimer) {
-        $script:ProgramStatusTimer.Stop()
-        $script:ProgramStatusTimer.Tag = $null
-        $script:ProgramStatusTimer.Dispose()
-        $script:ProgramStatusTimer = $null
+    $runtime = $script:GaloreProgramStatusRuntime
+    if($runtime.StatusTimer) {
+        $runtime.StatusTimer.Stop()
+        $runtime.StatusTimer.Tag = $null
+        $runtime.StatusTimer.Dispose()
+        $runtime.StatusTimer = $null
     }
-    if($script:StatusRefreshTimers) {
-        foreach($refreshTimer in @($script:StatusRefreshTimers)
+    if($runtime.RefreshTimers) {
+        foreach($refreshTimer in @($runtime.RefreshTimers)
         ) {
             if($refreshTimer) {
                 $refreshTimer.Stop()
@@ -435,8 +449,7 @@ function Stop-ProgramStatusResources {
                 $refreshTimer.Dispose()
             }
         }
-        $script:StatusRefreshTimers.Clear()
-        $script:StatusRefreshTimers = $null
+        $runtime.RefreshTimers.Clear()
     }
 }
 

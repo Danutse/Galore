@@ -1796,6 +1796,84 @@ Describe "Typed program action and status consumers" {
 
 }
 
+Describe "Program status runtime ownership" {
+
+    BeforeEach {
+
+        $script:GaloreProgramStatusRuntime = [GaloreProgramStatusRuntime]::new()
+
+    }
+
+    AfterEach {
+
+        Stop-ProgramStatusResources
+
+    }
+
+    It "starts with one stable empty timer collection" {
+
+        $script:GaloreProgramStatusRuntime.StatusTimer |
+        Should Be $null
+
+        ($script:GaloreProgramStatusRuntime.RefreshTimers -is [System.Collections.ArrayList]) |
+        Should Be $true
+
+        $script:GaloreProgramStatusRuntime.RefreshTimers.Count |
+        Should Be 0
+
+    }
+
+    It "registers delayed refresh timers with their owning runtime" {
+
+        Refresh-StatusDelayed -Programs @{} -Statuses @{} -ProgramsToUpdate @()
+
+        $script:GaloreProgramStatusRuntime.RefreshTimers.Count |
+        Should Be 1
+
+        $script:GaloreProgramStatusRuntime.RefreshTimers[0].Tag.Runtime |
+        Should Be $script:GaloreProgramStatusRuntime
+
+    }
+
+    It "reuses the periodic status timer across repeated initialization" {
+
+        $first = Initialize-StatusTimer -Programs @{} -Statuses @{}
+
+        $second = Initialize-StatusTimer -Programs @{ Discord = [GaloreProgramDefinition]::new() } -Statuses @{}
+
+        [object]::ReferenceEquals($first, $second) |
+        Should Be $true
+
+        $second.Tag.Programs.ContainsKey("Discord") |
+        Should Be $true
+
+    }
+
+    It "stops and clears owned timers idempotently" {
+
+        $statusTimer = New-Object System.Windows.Forms.Timer
+
+        $refreshTimer = New-Object System.Windows.Forms.Timer
+
+        $script:GaloreProgramStatusRuntime.StatusTimer = $statusTimer
+
+        $script:GaloreProgramStatusRuntime.RefreshTimers.Add($refreshTimer) | Out-Null
+
+        Stop-ProgramStatusResources
+
+        $script:GaloreProgramStatusRuntime.StatusTimer |
+        Should Be $null
+
+        $script:GaloreProgramStatusRuntime.RefreshTimers.Count |
+        Should Be 0
+
+        { Stop-ProgramStatusResources } |
+        Should Not Throw
+
+    }
+
+}
+
 Describe "Maintenance state contracts" {
 
     BeforeEach {

@@ -19,6 +19,7 @@ $GaloreModuleManifest = [ordered]@{
         "GaloreWindowPlacement"
         "GaloreLauncherSettings"
         "GaloreHardwareSnapshot"
+        "GaloreProgramStatusRuntime"
     )
 }
 
@@ -221,5 +222,19 @@ class GaloreHardwareSnapshot {
         $this.RAM = $RAM
         $this.GPU = $GPU
         $this.GPUTemp = $GPUTemp
+    }
+}
+
+# ============================================================
+# PROGRAM STATUS RUNTIME
+# ============================================================
+
+class GaloreProgramStatusRuntime {
+    [object]$StatusTimer
+    [System.Collections.ArrayList]$RefreshTimers
+
+    GaloreProgramStatusRuntime() {
+        $this.StatusTimer = $null
+        $this.RefreshTimers = [System.Collections.ArrayList]::new()
     }
 }
