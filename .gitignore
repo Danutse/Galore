@@ -1,0 +1,26 @@
+# Local signing material and developer certificate store references
+GaloreCodeSign.cer
+*.pfx
+*.p12
+
+# Generated packages and executables
+GaloreLauncher.exe
+GaloreLauncherSetup.exe
+Release/
+Releases/
+Installer/
+Build/
+
+# Runtime state and diagnostics
+Logs/
+Settings/*.json
+Settings/*.log
+
+# PowerShell runtime cache; bundled program files remain source-controlled.
+Programs/Microsoft/Windows/PowerShell/ModuleAnalysisCache
+
+# Local recovery and editor files
+Backups/
+*.bak
+*.tmp
+.vs/

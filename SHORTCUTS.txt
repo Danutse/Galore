@@ -1,0 +1,114 @@
+GALORE LAUNCHER - SHORTCUTS AND CONTROLS
+========================================
+
+GLOBAL SHORTCUT
+---------------
+
+Ctrl + Shift + Space
+    Show or hide the main Galore Launcher window.
+
+PROGRAM LIST
+------------
+
+Left-click a program name or checkbox
+    Select or clear that program for selected actions.
+
+Right-click a program name
+    Choose a different executable for that program.
+
+Launch All / Terminate All
+    Start or stop every configured program.
+
+Launch Selected / Terminate Selected
+    Start or stop only the checked programs.
+
+CATEGORY BUTTONS
+----------------
+
+Right-click a category button
+    Open its five-program category selector. Right-click again to close it.
+
+Ctrl + right-click a category button
+    Rename that category.
+
+Inside a category selector:
+
+  Left-click a slot
+      Select or clear that slot.
+
+  Right-click a slot
+      Choose or replace its executable.
+
+  Hover a configured slot and press Delete
+      Clear the slot and return it to Empty.
+
+QUICK-ACCESS BAR (BOTTOM)
+-------------------------
+
+Drag a folder, .exe, .lnk shortcut, or .url shortcut onto the bar
+    Add it to Quick Access.
+
+Left-click an icon
+    Open the item.
+
+Right-click an icon
+    Remove it from Quick Access.
+
+Drag an icon out of the bar
+    Remove it from Quick Access.
+
+WINDOW TASKBAR (LEFT)
+---------------------
+
+Left-click an application icon
+    Bring its window forward, restore it, or minimize it if already active.
+
+Right-click an application icon
+    Ask that application window to close.
+
+TITLE BAR AND SEARCH
+--------------------
+
+Click the launcher/search icon in the title bar
+    Open or close the Galore search window.
+
+SYSTEM TOOLS
+------------
+
+Double-click the Internet icon
+    Retry the active network connection after confirmation.
+
+Click the Volume icon
+    Open the volume control.
+
+Click the Keyboard Language icon
+    Choose an installed keyboard language. Use the mouse wheel to scroll a
+    longer language list.
+
+Click the Calculator icon
+    Open Windows Calculator.
+
+Click the hardware information area
+    Run Galore's RAM cleanup action.
+
+POST-ITS
+--------
+
+Click the Post-it icon
+    Create a new post-it note.
+
+Drag a post-it by its drag area
+    Move it. Its position and text are saved automatically.
+
+Check a post-it as complete
+    Mark it for removal; completed notes are removed from saved state when
+    Galore closes.
+
+SYSTEM TRAY
+-----------
+
+Double-click the Galore tray icon
+    Restore Galore.
+
+Right-click the Galore tray icon
+    Choose Open Launcher or Exit.

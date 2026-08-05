@@ -1,0 +1,506 @@
+# ============================================================
+# LAUNCHER WINDOW TASKBAR MODULE
+# ============================================================
+
+$GaloreModuleManifest = [ordered]@{
+    Name = "LauncherWindowTaskbar"
+    LoadOrder = 240
+    RequiresModules = @("LauncherAlphaOverlay", "LauncherLogging")
+    RequiresFunctions = [ordered]@{
+        "Write-LauncherDiagnostic" = "LauncherLogging"
+    }
+    RequiresTypes = [ordered]@{
+        "GaloreAlphaOverlay.PerPixelAlphaForm" = "LauncherAlphaOverlay"
+    }
+    RequiresVariables = @()
+    RequiresFolders = @()
+    RequiresFiles = @()
+    ProvidesTypes = @("GaloreWindowTaskbar.Native")
+}
+
+if(-not ("GaloreWindowTaskbar.Native" -as [type]))
+{
+    Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace GaloreWindowTaskbar
+{
+    public sealed class WindowInfo
+    {
+        public IntPtr Handle { get; set; }
+        public uint ProcessId { get; set; }
+        public string Title { get; set; }
+    }
+
+    public static class Native
+    {
+        private const int GWL_EXSTYLE = -20;
+        private const long WS_EX_TOOLWINDOW = 0x00000080L;
+        private const int GW_OWNER = 4;
+        private const int SW_RESTORE = 9;
+        private const int SW_MINIMIZE = 6;
+        private const uint WM_CLOSE = 0x0010;
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowTextLength(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int maxCount);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+        private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int index);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong", SetLastError = true)]
+        private static extern IntPtr GetWindowLong32(IntPtr hWnd, int index);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindow(IntPtr hWnd, int command);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int command);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        public static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+        private static long GetExtendedStyle(IntPtr hWnd)
+        {
+            return IntPtr.Size == 8
+                ? GetWindowLongPtr64(hWnd, GWL_EXSTYLE).ToInt64()
+                : GetWindowLong32(hWnd, GWL_EXSTYLE).ToInt64();
+        }
+
+        public static bool IsTaskbarWindowCandidate(
+            bool isVisible,
+            bool hasOwner,
+            bool isToolWindow,
+            bool isMainWindow,
+            int titleLength,
+            bool isExcludedProcess
+        )
+        {
+            return isVisible &&
+                !hasOwner &&
+                !isToolWindow &&
+                isMainWindow &&
+                titleLength > 0 &&
+                !isExcludedProcess;
+        }
+
+        public static WindowInfo[] GetTaskbarWindows(int excludedProcessId)
+        {
+            List<WindowInfo> windows = new List<WindowInfo>();
+
+            EnumWindows(delegate(IntPtr hWnd, IntPtr lParam)
+            {
+                uint processId;
+                GetWindowThreadProcessId(hWnd, out processId);
+
+                bool isMainWindow = false;
+
+                try
+                {
+                    using(Process process = Process.GetProcessById((int)processId))
+                    {
+                        isMainWindow = process.MainWindowHandle == hWnd;
+                    }
+                }
+                catch
+                {
+                    return true;
+                }
+
+                int length = GetWindowTextLength(hWnd);
+                bool isCandidate = IsTaskbarWindowCandidate(
+                    IsWindowVisible(hWnd),
+                    GetWindow(hWnd, GW_OWNER) != IntPtr.Zero,
+                    (GetExtendedStyle(hWnd) & WS_EX_TOOLWINDOW) != 0,
+                    isMainWindow,
+                    length,
+                    processId == (uint)excludedProcessId
+                );
+
+                if(!isCandidate)
+                    return true;
+
+                StringBuilder title = new StringBuilder(length + 1);
+                GetWindowText(hWnd, title, title.Capacity);
+
+                windows.Add(new WindowInfo {
+                    Handle = hWnd,
+                    ProcessId = processId,
+                    Title = title.ToString()
+                });
+
+                return true;
+            }, IntPtr.Zero);
+
+            return windows.ToArray();
+        }
+
+        public static void ActivateOrMinimize(IntPtr hWnd)
+        {
+            if(GetForegroundWindow() == hWnd)
+            {
+                ShowWindow(hWnd, SW_MINIMIZE);
+                return;
+            }
+
+            if(IsIconic(hWnd))
+                ShowWindow(hWnd, SW_RESTORE);
+
+            SetForegroundWindow(hWnd);
+        }
+
+        public static void RequestClose(IntPtr hWnd)
+        {
+            PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+        }
+    }
+}
+"@
+}
+
+$script:GaloreWindowTaskbar = $null
+$script:GaloreWindowTaskbarTimer = $null
+$script:GaloreWindowTaskbarSignature = $null
+$script:GaloreWindowTaskbarKeyColor = [System.Drawing.Color]::FromArgb(1, 2, 3)
+
+function Get-GaloreWindowTaskbarSignature {
+
+    param([object[]]$Windows)
+
+    return (
+        @($Windows | ForEach-Object {
+            "$($_.Handle)|$($_.Title)"
+        }) -join "`n"
+    )
+
+}
+
+function Get-GaloreWindowTaskbarIcon {
+
+    param([uint32]$ProcessId)
+
+    try
+    {
+        $process = [System.Diagnostics.Process]::GetProcessById($ProcessId)
+        $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($process.MainModule.FileName)
+
+        try
+        {
+            return [GaloreAlphaOverlay.PerPixelAlphaForm]::IconToAlphaBitmap($icon, 32, 32)
+        }
+        finally { if($icon) { $icon.Dispose() } }
+    }
+    catch
+    {
+        return $null
+    }
+
+}
+
+function Set-GaloreWindowTaskbarLocation {
+
+    param([System.Windows.Forms.Form]$Form)
+
+    if(
+        $null -eq $script:GaloreWindowTaskbar -or
+        $script:GaloreWindowTaskbar.IsDisposed -or
+        $Form.IsDisposed -or
+        $Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -or
+        $Form.ClientSize.Width -le 0 -or
+        $Form.ClientSize.Height -le 0
+    )
+    {
+        return
+    }
+
+    $bar = $script:GaloreWindowTaskbar
+    $top = 44
+    $height = [Math]::Max(44, ($Form.ClientSize.Height - $top))
+    $screenPoint = $Form.PointToScreen([System.Drawing.Point]::new(0, $top))
+    $screen = [System.Windows.Forms.Screen]::FromControl($Form)
+    $left = $screenPoint.X - 50
+
+    if($left -lt $screen.WorkingArea.Left)
+    {
+        $left = $screen.WorkingArea.Left
+    }
+
+    $bar.ClientSize = [System.Drawing.Size]::new(46, $height)
+    $bar.Location = [System.Drawing.Point]::new($left, $screenPoint.Y)
+
+    Render-GaloreWindowTaskbar
+
+}
+
+function Update-GaloreWindowTaskbar {
+
+    if($null -eq $script:GaloreWindowTaskbar -or $script:GaloreWindowTaskbar.IsDisposed)
+    {
+        return
+    }
+
+    try
+    {
+        $windows = @([GaloreWindowTaskbar.Native]::GetTaskbarWindows($PID))
+        $signature = Get-GaloreWindowTaskbarSignature -Windows $windows
+
+        if($signature -eq $script:GaloreWindowTaskbarSignature)
+        {
+            return
+        }
+
+        $script:GaloreWindowTaskbarSignature = $signature
+        $bar = $script:GaloreWindowTaskbar
+
+        foreach($control in @($bar.Controls))
+        {
+            if($control.Image)
+            {
+                $image = $control.Image
+                $control.Image = $null
+                $image.Dispose()
+            }
+
+            $control.Dispose()
+        }
+
+        $bar.Controls.Clear()
+
+        [int]$top = 6
+
+        foreach($window in $windows)
+        {
+            if(($top + 34) -gt $bar.ClientSize.Height)
+            {
+                break
+            }
+
+            $entry = New-Object System.Windows.Forms.PictureBox
+            $entry.Size = [System.Drawing.Size]::new(34, 34)
+            $entry.Location = [System.Drawing.Point]::new(6, $top)
+            $entry.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+            $entry.Cursor = [System.Windows.Forms.Cursors]::Hand
+            $entry.BackColor = $script:GaloreWindowTaskbarKeyColor
+            $entry.Image = Get-GaloreWindowTaskbarIcon -ProcessId $window.ProcessId
+            $entry.Tag = $window
+
+            $entry.Add_Click({
+                param($sender, $e)
+                [GaloreWindowTaskbar.Native]::ActivateOrMinimize($sender.Tag.Handle)
+            })
+
+            $entry.Add_MouseUp({
+                param($sender, $e)
+
+                if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right)
+                {
+                    [GaloreWindowTaskbar.Native]::RequestClose($sender.Tag.Handle)
+                }
+            })
+
+            $toolTip = New-Object System.Windows.Forms.ToolTip
+            $toolTip.SetToolTip($entry, "$($window.Title)`nRight-click to close")
+            $entry.Visible = $false
+            $bar.Controls.Add($entry)
+            $top += 40
+        }
+
+        Render-GaloreWindowTaskbar
+    }
+    catch
+    {
+        Write-LauncherDiagnostic -Exception $_ -Context "Failed to refresh the window taskbar."
+    }
+
+}
+
+function Render-GaloreWindowTaskbar {
+
+    $bar = $script:GaloreWindowTaskbar
+    if($null -eq $bar -or $bar.IsDisposed -or -not $bar.IsHandleCreated)
+    {
+        return
+    }
+
+    if($bar.ClientSize.Width -le 0 -or $bar.ClientSize.Height -le 0)
+    {
+        return
+    }
+
+    $bitmap = New-Object System.Drawing.Bitmap(
+        $bar.ClientSize.Width,
+        $bar.ClientSize.Height,
+        [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb
+    )
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+
+    try
+    {
+        $graphics.Clear([System.Drawing.Color]::Transparent)
+
+        foreach($control in @($bar.Controls))
+        {
+            if($control.Image)
+            {
+                $graphics.DrawImage($control.Image, $control.Bounds)
+            }
+        }
+
+        $bar.SetLayeredBitmap($bitmap)
+    }
+    finally
+    {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+
+}
+
+function Initialize-GaloreWindowTaskbar {
+
+    param([System.Windows.Forms.Form]$Form)
+
+    $bar = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+    $bar.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $bar.ShowInTaskbar = $false
+    $bar.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $bar.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
+    $bar.Owner = $Form
+
+    $bar.Add_MouseUp({
+        param($sender, $e)
+
+        $entry = @($sender.Controls | Where-Object { $_.Bounds.Contains($e.Location) }) | Select-Object -First 1
+        if($null -eq $entry)
+        {
+            return
+        }
+
+        if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right)
+        {
+            [GaloreWindowTaskbar.Native]::RequestClose($entry.Tag.Handle)
+        }
+        elseif($e.Button -eq [System.Windows.Forms.MouseButtons]::Left)
+        {
+            [GaloreWindowTaskbar.Native]::ActivateOrMinimize($entry.Tag.Handle)
+        }
+    }.GetNewClosure())
+
+    $bar.Add_FormClosed({
+        param($sender, $e)
+        foreach($control in @($sender.Controls))
+        {
+            if($control.Image)
+            {
+                $control.Image.Dispose()
+                $control.Image = $null
+            }
+        }
+    })
+
+    $script:GaloreWindowTaskbar = $bar
+
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 1000
+    $timer.Add_Tick({
+        try
+        {
+            Update-GaloreWindowTaskbar
+        }
+        catch
+        {
+            try
+            {
+                Write-LauncherDiagnostic `
+                -Exception $_ `
+                -Context "Window taskbar timer stopped after an internal error."
+            }
+            catch
+            {
+            }
+        }
+    }.GetNewClosure())
+    $timer.Start()
+    $script:GaloreWindowTaskbarTimer = $timer
+
+    Register-GaloreOverlayLifecycle `
+    -Form $Form
+
+    $Form.Add_Move({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
+    $Form.Add_SizeChanged({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
+    $Form.Add_FormClosed({ Stop-GaloreWindowTaskbar }.GetNewClosure())
+    $Form.Add_Shown({
+        $bar.SetLayeredOpacity(0)
+        $bar.Show()
+        Set-GaloreWindowTaskbarLocation -Form $Form
+        Update-GaloreWindowTaskbar
+        $script:GaloreOverlayLifecycleReady = $true
+        Show-GaloreLauncherOverlayBars `
+        -DurationMilliseconds 420
+    }.GetNewClosure())
+
+}
+
+function Stop-GaloreWindowTaskbar {
+
+    if($script:GaloreWindowTaskbarTimer)
+    {
+        $script:GaloreWindowTaskbarTimer.Stop()
+        $script:GaloreWindowTaskbarTimer.Dispose()
+        $script:GaloreWindowTaskbarTimer = $null
+    }
+
+    if($script:GaloreWindowTaskbar -and -not $script:GaloreWindowTaskbar.IsDisposed)
+    {
+        $script:GaloreWindowTaskbar.Close()
+    }
+
+    $script:GaloreWindowTaskbar = $null
+    $script:GaloreWindowTaskbarSignature = $null
+
+}
+
+foreach($callbackName in @(
+    "Get-GaloreWindowTaskbarIcon",
+    "Set-GaloreWindowTaskbarLocation",
+    "Update-GaloreWindowTaskbar",
+    "Render-GaloreWindowTaskbar",
+    "Stop-GaloreWindowTaskbar"
+))
+{
+    $callback = Get-Command `
+    -Name $callbackName `
+    -CommandType Function `
+    -ErrorAction Stop
+
+    Set-Item `
+    -Path ("Function:global:{0}" -f $callbackName) `
+    -Value $callback.ScriptBlock `
+    -Force
+}
