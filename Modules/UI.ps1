@@ -1015,8 +1015,8 @@ function New-HotkeysButton {
 
     New-ImagePanel `
         -IconName "Hotkeys.png" `
-        -X 155 `
-        -Y 45 `
+        -X 5 `
+        -Y 80 `
         -PanelWidth 30 `
         -PanelHeight 30 `
         -ImageWidth 30 `
