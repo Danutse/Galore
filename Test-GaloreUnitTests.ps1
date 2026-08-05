@@ -1,9 +1,22 @@
 [CmdletBinding()]
 
 param(
-    [string]$GaloreRoot =
-    $PSScriptRoot
+    [string]$GaloreRoot
 )
+
+
+
+if(
+    [string]::IsNullOrWhiteSpace(
+        $GaloreRoot
+    )
+)
+{
+
+    $GaloreRoot =
+    $PSScriptRoot
+
+}
 
 
 
@@ -33,6 +46,9 @@ $pester =
 Get-Module `
 -ListAvailable `
 -Name Pester |
+Where-Object {
+    $_.Version.Major -le 4
+} |
 Sort-Object `
 -Property Version `
 -Descending |
@@ -44,7 +60,7 @@ Select-Object `
 if($null -eq $pester)
 {
 
-    throw "Pester is required to run Galore unit tests."
+    throw "Pester 3 or 4 is required to run Galore unit tests."
 
 }
 
