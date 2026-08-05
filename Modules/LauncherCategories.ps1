@@ -13,6 +13,7 @@ $GaloreModuleManifest = [ordered]@{
         "Set-GaloreTransparentWindowRegion" = "LauncherAlphaOverlay"
     }
     RequiresTypes = [ordered]@{
+        "GaloreProgramDefinition" = "LauncherDomain"
         "GaloreCategorySlot" = "LauncherDomain"
         "GaloreCategory" = "LauncherDomain"
         "GaloreCategoryState" = "LauncherDomain"
@@ -233,7 +234,15 @@ function Initialize-GaloreCategories {
     $state = Initialize-GaloreCategoryState
     $programs = @{}
     $checks = @{}
-    foreach($category in $state.Categories) { foreach($slot in $category.Slots) { $processName = if(Test-GaloreCategorySlotConfigured $slot) { [IO.Path]::GetFileNameWithoutExtension($slot.Path) } else { "" }; $programs[$slot.Id] = @{ Path = $slot.Path; Args = ""; StatusProcess = $processName; WindowProcess = $processName; DisplayName = $slot.DisplayName }; $checks[$slot.Id] = [pscustomobject]@{ Checked = [bool]$slot.Selected } } }
+    foreach($category in $state.Categories) {
+        foreach($slot in $category.Slots) {
+            $processName = if(Test-GaloreCategorySlotConfigured $slot) { [IO.Path]::GetFileNameWithoutExtension($slot.Path) } else { "" }
+            $program = [GaloreProgramDefinition]::new($slot.Path, "", $processName, $processName)
+            $program.DisplayName = $slot.DisplayName
+            $programs[$slot.Id] = $program
+            $checks[$slot.Id] = [pscustomobject]@{ Checked = [bool]$slot.Selected }
+        }
+    }
     for($index = 0; $index -lt 4; $index++) {
         $category = $state.Categories[$index]
         $master = New-Object System.Windows.Forms.CheckBox

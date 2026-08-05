@@ -80,7 +80,11 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherHardware.ps1")
 
+. (Join-Path $moduleRoot "LauncherProcess.ps1")
+
 . (Join-Path $moduleRoot "LauncherPrograms.ps1")
+
+. (Join-Path $moduleRoot "LauncherAction.ps1")
 
 
 
@@ -236,6 +240,41 @@ Describe "Browser selection" {
 
 
 
+    It "updates a typed Browser program definition in place" {
+
+        $browserProgram = [GaloreProgramDefinition]::new("", "", "browser", "browser")
+
+        $programs = @{ Browser = $browserProgram }
+
+        $browser = [pscustomobject]@{
+            Id = "Firefox"
+            DisplayName = "Mozilla Firefox"
+            Path = "C:\Program Files\Mozilla Firefox\firefox.exe"
+            ProcessName = "firefox"
+        }
+
+        Set-GaloreBrowserProgram -Programs $programs -Browser $browser
+
+        [object]::ReferenceEquals($browserProgram, $programs.Browser) |
+        Should Be $true
+
+        $browserProgram.Path |
+        Should Be $browser.Path
+
+        $browserProgram.StatusProcess |
+        Should Be "firefox"
+
+        $browserProgram.WindowProcess |
+        Should Be "firefox"
+
+        $browserProgram.BrowserId |
+        Should Be "Firefox"
+
+        $browserProgram.BrowserDisplayName |
+        Should Be "Mozilla Firefox"
+
+    }
+
     It "only reports browsers whose executable path exists" {
 
         $browsers =
@@ -257,6 +296,31 @@ Describe "Browser selection" {
             Should Be $true
 
         }
+
+    }
+
+    It "keeps a typed Browser definition unconfigured when no browser is installed" {
+
+        Mock Get-InstalledBrowsers { [ordered]@{} }
+
+        $browserProgram = [GaloreProgramDefinition]::new("C:\Apps\OldBrowser.exe", "", "oldbrowser", "oldbrowser")
+
+        $browserProgram.BrowserId = "OldBrowser"
+
+        $browserProgram.BrowserDisplayName = "Old Browser"
+
+        $programs = @{ Browser = $browserProgram }
+
+        Initialize-GaloreBrowser -Programs $programs -AppRoot $GaloreRoot
+
+        $browserProgram.Path |
+        Should Be ""
+
+        $browserProgram.BrowserId |
+        Should Be ""
+
+        $browserProgram.BrowserDisplayName |
+        Should Be "No browser detected"
 
     }
 
@@ -882,6 +946,7 @@ Describe "Hotkey settings persistence" {
         Mock Write-LauncherDiagnostic {}
 
     }
+
     It "saves and restores the launcher and category hotkeys" {
 
         Initialize-GaloreHotkeySettings
@@ -1270,15 +1335,11 @@ Describe "Category state contracts" {
 
         $check.Checked = $true
 
-        $programs = @{
-            $slot.Id = @{
-                Path = $slot.Path
-                Args = "--test"
-                StatusProcess = "One"
-                WindowProcess = "One"
-                DisplayName = "One"
-            }
-        }
+        $program = [GaloreProgramDefinition]::new($slot.Path, "--test", "One", "One")
+
+        $program.DisplayName = "One"
+
+        $programs = @{ $slot.Id = $program }
 
         $checks = @{
             $slot.Id = [pscustomobject]@{ Checked = $true }
@@ -1328,6 +1389,37 @@ Describe "Category state contracts" {
             $label.Dispose()
 
             $check.Dispose()
+
+        }
+
+    }
+
+}
+
+Describe "Category program projections" {
+
+    It "projects every category slot into a typed program definition" {
+
+        Mock Initialize-GaloreCategoryState { New-GaloreCategoryState }
+
+        $form = New-Object System.Windows.Forms.Form
+
+        try {
+
+            $projection = Initialize-GaloreCategories -Form $form
+
+            $projection.Programs.Count |
+            Should Be 20
+
+            @($projection.Programs.Values | Where-Object { $_ -isnot [GaloreProgramDefinition] }).Count |
+            Should Be 0
+
+            $projection.Programs.Category1Slot1.DisplayName |
+            Should Be "Empty"
+
+        } finally {
+
+            $form.Dispose()
 
         }
 
@@ -1389,6 +1481,47 @@ Describe "Configuration discovery contracts" {
 
     }
 
+    It "applies a saved executable override to a typed program definition" {
+
+        $overridePath = Join-Path $TestDrive "TypedRecorder.exe"
+
+        Set-Content -LiteralPath $overridePath -Value "fixture"
+
+        $program = [GaloreProgramDefinition]::new("C:\Old\Recorder.exe", "-silent", "OldRecorder", "OldRecorder")
+
+        $programs = @{ Recorder = $program }
+
+        Mock Get-LauncherProgramOverrides {
+            @{
+                Recorder = [pscustomobject]@{
+                    Path = $overridePath
+                    DisplayName = "Typed Recording"
+                }
+            }
+        }
+
+        Apply-GaloreProgramOverrides -Programs $programs
+
+        [object]::ReferenceEquals($program, $programs.Recorder) |
+        Should Be $true
+
+        $program.Path |
+        Should Be $overridePath
+
+        $program.Args |
+        Should Be ""
+
+        $program.StatusProcess |
+        Should Be "TypedRecorder"
+
+        $program.WindowProcess |
+        Should Be "TypedRecorder"
+
+        $program.DisplayName |
+        Should Be "Typed Recording"
+
+    }
+
     It "returns the first existing candidate path" {
 
         $first = Join-Path $TestDrive "first.exe"
@@ -1424,13 +1557,20 @@ Describe "Configuration discovery contracts" {
 
     }
 
-    It "builds every launcher program with the process contract required by status logic" {
+    It "builds typed launcher programs without changing their process contracts" {
 
         $programs = New-LauncherProgramConfiguration -EnvPaths @{
             ScrcpyVBS = "C:\\Galore\\Programs\\scrcpy\\playphone.vbs"
             Discord = "C:\\Apps\\Discord.exe"
             Steam = "C:\\Apps\\Steam.exe"
-            Browsers = [ordered]@{}
+            Browsers = [ordered]@{
+                Firefox = [pscustomobject]@{
+                    Id = "Firefox"
+                    DisplayName = "Mozilla Firefox"
+                    Path = "C:\\Apps\\Firefox.exe"
+                    ProcessName = "firefox"
+                }
+            }
             BSG = "C:\\Apps\\BsgLauncher.exe"
             RivaTuner = "C:\\Apps\\RTSS.exe"
             MSIAfterBurner = "C:\\Apps\\MSIAfterburner.exe"
@@ -1443,17 +1583,212 @@ Describe "Configuration discovery contracts" {
 
         foreach($program in $programs.Values) {
 
-            $program.ContainsKey("Path") |
+            ($program -is [GaloreProgramDefinition]) |
             Should Be $true
 
-            $program.ContainsKey("Args") |
-            Should Be $true
+        }
 
-            $program.ContainsKey("StatusProcess") |
-            Should Be $true
+        $programs.Phone.Args |
+        Should Be '//nologo "C:\\Galore\\Programs\\scrcpy\\playphone.vbs"'
 
-            $program.ContainsKey("WindowProcess") |
-            Should Be $true
+        $programs.Phone.StatusProcess |
+        Should Be "scrcpy"
+
+        $programs.Discord.Args |
+        Should Be "--processStart Discord.exe"
+
+        $programs.Discord.StatusProcess |
+        Should Be "Discord"
+
+        $programs.Browser.Path |
+        Should Be "C:\\Apps\\Firefox.exe"
+
+        $programs.Browser.BrowserId |
+        Should Be "Firefox"
+
+        $programs.Browser.BrowserDisplayName |
+        Should Be "Mozilla Firefox"
+
+        $programs.Browser.StatusProcess |
+        Should Be "firefox"
+
+    }
+
+    It "uses empty typed paths for unavailable optional programs" {
+
+        $programs = New-LauncherProgramConfiguration -EnvPaths @{
+            ScrcpyVBS = "C:\\Galore\\Programs\\scrcpy\\playphone.vbs"
+            Discord = $null
+            Steam = $null
+            Browsers = [ordered]@{}
+            BSG = $null
+            RivaTuner = $null
+            MSIAfterBurner = $null
+            ShareX = $null
+            Spotify = $null
+        }
+
+        $programs.Discord.Path |
+        Should Be ""
+
+        $programs.Discord.IsConfigured() |
+        Should Be $false
+
+        $programs.Browser.Path |
+        Should Be ""
+
+        $programs.Browser.BrowserId |
+        Should Be ""
+
+        $programs.Browser.BrowserDisplayName |
+        Should Be "No browser detected"
+
+    }
+
+    It "validates typed definitions and rejects legacy or invalid program entries" {
+
+        Mock Test-Path { $true }
+
+        $envPaths = @{
+            AppIcon = "C:\\Galore\\resources\\Galore.ico"
+            ScrcpyVBS = "C:\\Galore\\Programs\\scrcpy\\playphone.vbs"
+            Discord = "C:\\Apps\\Discord.exe"
+            Steam = "C:\\Apps\\Steam.exe"
+            Browsers = [ordered]@{}
+            BSG = "C:\\Apps\\BsgLauncher.exe"
+            RivaTuner = "C:\\Apps\\RTSS.exe"
+            MSIAfterBurner = "C:\\Apps\\MSIAfterburner.exe"
+            ShareX = "C:\\Apps\\ShareX.exe"
+            Spotify = "C:\\Apps\\Spotify.exe"
+        }
+
+        $configuration = [pscustomobject]@{
+            ProgramRoot = "C:\\Galore"
+            EnvPaths = $envPaths
+            Programs = New-LauncherProgramConfiguration -EnvPaths $envPaths
+        }
+
+        (Test-LauncherConfigurationSchema -Configuration $configuration).IsValid |
+        Should Be $true
+
+        $configuration.Programs.Spotify = @{ Path = "C:\\Apps\\Spotify.exe"; Args = "-silent"; StatusProcess = "Spotify"; WindowProcess = "Spotify" }
+
+        (Test-LauncherConfigurationSchema -Configuration $configuration).IsValid |
+        Should Be $false
+
+        $configuration.Programs = New-LauncherProgramConfiguration -EnvPaths $envPaths
+
+        $configuration.Programs.Spotify.StatusProcess = ""
+
+        (Test-LauncherConfigurationSchema -Configuration $configuration).IsValid |
+        Should Be $false
+
+    }
+
+}
+
+Describe "Program display text" {
+
+    It "resolves browser, custom, and fallback labels for typed and legacy definitions" {
+
+        $typedBrowser = [GaloreProgramDefinition]::new()
+
+        $typedBrowser.BrowserDisplayName = "Opera GX"
+
+        Get-GaloreProgramDisplayText -Name "Browser" -Program $typedBrowser |
+        Should Be "Browser: Opera GX"
+
+        $typedProgram = [GaloreProgramDefinition]::new()
+
+        $typedProgram.DisplayName = "Recording"
+
+        Get-GaloreProgramDisplayText -Name "Recorder" -Program $typedProgram |
+        Should Be "Recording"
+
+        Get-GaloreProgramDisplayText -Name "Discord" -Program ([GaloreProgramDefinition]::new()) |
+        Should Be "Discord"
+
+        Get-GaloreProgramDisplayText -Name "Browser" -Program @{ BrowserDisplayName = "Firefox" } |
+        Should Be "Browser: Firefox"
+
+        Get-GaloreProgramDisplayText -Name "Tool" -Program @{ DisplayName = "Legacy Tool" } |
+        Should Be "Legacy Tool"
+
+    }
+
+}
+
+Describe "Typed program action and status consumers" {
+
+    BeforeEach {
+
+        Mock Start-Process {}
+
+        Mock Refresh-StatusDelayed {}
+
+        Mock Start-SpotifyAutoplay {}
+
+        Mock Write-LauncherDiagnostic {}
+
+    }
+
+    It "launches a typed program with its preserved argument list" {
+
+        $program = [GaloreProgramDefinition]::new("C:\Apps\DiscordUpdate.exe", "--processStart Discord.exe", "Discord", "Discord")
+
+        Invoke-ProgramLaunch -Programs @{ Discord = $program } -Statuses @{} -ProgramNames @("Discord") -AppRoot $GaloreRoot
+
+        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
+            $FilePath -eq "C:\Apps\DiscordUpdate.exe" -and $ArgumentList -eq "--processStart Discord.exe"
+        }
+
+        Assert-MockCalled Refresh-StatusDelayed -Times 1 -Exactly -Scope It -ParameterFilter {
+            @($ProgramsToUpdate).Count -eq 1 -and $ProgramsToUpdate[0] -eq "Discord"
+        }
+
+    }
+
+    It "terminates a typed program by its status process" {
+
+        $program = [GaloreProgramDefinition]::new("C:\Apps\Discord.exe", "", "Discord", "Discord")
+
+        Invoke-ProgramTermination -Programs @{ Discord = $program } -Statuses @{} -ProgramNames @("Discord")
+
+        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
+            $FilePath -eq "powershell.exe" -or $null -eq $FilePath
+        }
+
+        Assert-MockCalled Refresh-StatusDelayed -Times 1 -Exactly -Scope It -ParameterFilter {
+            @($ProgramsToUpdate).Count -eq 1 -and $ProgramsToUpdate[0] -eq "Discord"
+        }
+
+    }
+
+    It "updates a status label from a typed program process identity" {
+
+        Mock Get-ProgramStatus { $true }
+
+        Mock Update-GaloreApplicationMaintenanceState {}
+
+        $program = [GaloreProgramDefinition]::new("C:\Apps\Discord.exe", "", "Discord", "Discord")
+
+        $label = New-Object System.Windows.Forms.Label
+
+        try {
+
+            Update-ProgramStatus -Programs @{ Discord = $program } -Statuses @{ Discord = $label } -ProgramsToUpdate @("Discord")
+
+            $label.Text |
+            Should Be "$([char]0x25CF) Running"
+
+            $label.ForeColor |
+            Should Be ([System.Drawing.Color]::Green)
+
+            Assert-MockCalled Get-ProgramStatus -Times 1 -Exactly -Scope It -ParameterFilter { $ProcessName -eq "Discord" }
+
+        } finally {
+
+            $label.Dispose()
 
         }
 

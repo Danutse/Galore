@@ -55,6 +55,17 @@ function Apply-GaloreProgramOverrides {
     }
 }
 
+function Get-GaloreProgramDisplayText {
+    param([string]$Name, $Program)
+    if($Name -eq "Browser" -and -not [string]::IsNullOrWhiteSpace([string]$Program.BrowserDisplayName)) {
+        return "Browser: $($Program.BrowserDisplayName)"
+    }
+    if(-not [string]::IsNullOrWhiteSpace([string]$Program.DisplayName)) {
+        return [string]$Program.DisplayName
+    }
+    return $Name
+}
+
 function Show-GaloreProgramNameDialog {
     param([string]$Prompt, [string]$DefaultName, [System.Windows.Forms.IWin32Window]$Owner)
     $dialog = New-Object System.Windows.Forms.Form
@@ -189,13 +200,7 @@ function Build-ProgramGrid {
         # ==========================
 
         $nameLabel = New-Object System.Windows.Forms.Label
-        $nameLabel.Text = if($name -eq "Browser" -and $program.Contains("BrowserDisplayName")) {
-            "Browser: $($program.BrowserDisplayName)"
-        } elseif($program.Contains("DisplayName") -and -not [string]::IsNullOrWhiteSpace([string]$program.DisplayName)) {
-            [string]$program.DisplayName
-        } else {
-            $name
-        }
+        $nameLabel.Text = Get-GaloreProgramDisplayText -Name $name -Program $program
         $nameLabel.Name = $name
         $nameLabel.Location = New-Object System.Drawing.Point(($x + 22), $y)
         $nameLabel.Width = 250

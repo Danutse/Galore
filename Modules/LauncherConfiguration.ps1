@@ -5,9 +5,11 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherConfiguration"
     LoadOrder = 190
-    RequiresModules = @()
+    RequiresModules = @("LauncherDomain")
     RequiresFunctions = [ordered]@{}
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreProgramDefinition" = "LauncherDomain"
+    }
     RequiresVariables = @()
     RequiresFolders = @("Resources", "Programs", "Programs\scrcpy")
     RequiresFiles = @("Resources\Galore.ico", "Programs\scrcpy\playphone.vbs")
@@ -232,83 +234,25 @@ function New-LauncherProgramConfiguration {
     $defaultBrowser = @(
         $EnvPaths.Browsers.Values | Select-Object -First 1
     )[0]
+    $browserProcess = if($defaultBrowser) { $defaultBrowser.ProcessName } else { "browser" }
+    $browserProgram = [GaloreProgramDefinition]::new(
+        $(if($defaultBrowser) { $defaultBrowser.Path } else { "" }),
+        "",
+        $browserProcess,
+        $browserProcess
+    )
+    $browserProgram.BrowserId = if($defaultBrowser) { $defaultBrowser.Id } else { "" }
+    $browserProgram.BrowserDisplayName = if($defaultBrowser) { $defaultBrowser.DisplayName } else { "No browser detected" }
     return @{
-        "Phone" = @{
-            Path = "$env:SystemRoot\System32\wscript.exe"
-            Args = "//nologo `"$($EnvPaths.ScrcpyVBS)`""
-            StatusProcess = "scrcpy"
-            WindowProcess = "scrcpy"
-        }
-        "Discord" = @{
-            Path = $EnvPaths.Discord
-            Args = "--processStart Discord.exe"
-            StatusProcess = "Discord"
-            WindowProcess = "Discord"
-        }
-        "Steam" = @{
-            Path = $EnvPaths.Steam
-            Args = "-silent"
-            StatusProcess = "steam"
-            WindowProcess = "steam"
-        }
-        "Browser" = @{
-            Path = if($defaultBrowser) {
-                $defaultBrowser.Path
-            } else {
-                $null
-            }
-            Args = ""
-            StatusProcess = if($defaultBrowser) {
-                $defaultBrowser.ProcessName
-            } else {
-                "browser"
-            }
-            WindowProcess = if($defaultBrowser) {
-                $defaultBrowser.ProcessName
-            } else {
-                "browser"
-            }
-            BrowserId = if($defaultBrowser) {
-                $defaultBrowser.Id
-            } else {
-                $null
-            }
-            BrowserDisplayName = if($defaultBrowser) {
-                $defaultBrowser.DisplayName
-            } else {
-                "No browser detected"
-            }
-        }
-        "BattleStateLauncher" = @{
-            Path = $EnvPaths.BSG
-            Args = "-silent"
-            StatusProcess = "BsgLauncher"
-            WindowProcess = "BsgLauncher"
-        }
-        "RivaTuner" = @{
-            Path = $EnvPaths.RivaTuner
-            Args = "-silent"
-            StatusProcess = "RTSS"
-            WindowProcess = "RTSS"
-        }
-        "MSI Afterburner" = @{
-            Path = $EnvPaths.MSIAfterBurner
-            Args = "-silent"
-            StatusProcess = "MSIAfterburner"
-            WindowProcess = "MSIAfterburner"
-        }
-        "ShareX" = @{
-            Path = $EnvPaths.ShareX
-            Args = "-silent"
-            StatusProcess = "ShareX"
-            WindowProcess = "ShareX"
-        }
-        "Spotify" = @{
-            Path = $EnvPaths.Spotify
-            Args = "-silent"
-            StatusProcess = "Spotify"
-            WindowProcess = "Spotify"
-        }
+        "Phone" = [GaloreProgramDefinition]::new("$env:SystemRoot\System32\wscript.exe", "//nologo `"$($EnvPaths.ScrcpyVBS)`"", "scrcpy", "scrcpy")
+        "Discord" = [GaloreProgramDefinition]::new($EnvPaths.Discord, "--processStart Discord.exe", "Discord", "Discord")
+        "Steam" = [GaloreProgramDefinition]::new($EnvPaths.Steam, "-silent", "steam", "steam")
+        "Browser" = $browserProgram
+        "BattleStateLauncher" = [GaloreProgramDefinition]::new($EnvPaths.BSG, "-silent", "BsgLauncher", "BsgLauncher")
+        "RivaTuner" = [GaloreProgramDefinition]::new($EnvPaths.RivaTuner, "-silent", "RTSS", "RTSS")
+        "MSI Afterburner" = [GaloreProgramDefinition]::new($EnvPaths.MSIAfterBurner, "-silent", "MSIAfterburner", "MSIAfterburner")
+        "ShareX" = [GaloreProgramDefinition]::new($EnvPaths.ShareX, "-silent", "ShareX", "ShareX")
+        "Spotify" = [GaloreProgramDefinition]::new($EnvPaths.Spotify, "-silent", "Spotify", "Spotify")
     }
 }
 
@@ -400,12 +344,6 @@ function Test-LauncherConfigurationSchema {
         "ShareX"
         "Spotify"
     )
-    $requiredProgramProperties = @(
-        "Path"
-        "Args"
-        "StatusProcess"
-        "WindowProcess"
-    )
     if($null -ne $Configuration.PSObject.Properties["Programs"]) {
         if(-not ($Configuration.Programs -is [System.Collections.IDictionary])) {
             $null = $errors.Add("Programs must be a dictionary.")
@@ -416,33 +354,25 @@ function Test-LauncherConfigurationSchema {
                     continue
                 }
                 $program = $Configuration.Programs[$programName]
-                if(-not ($program -is [System.Collections.IDictionary])) {
-                    $null = $errors.Add("Program '$programName' must be a dictionary.")
+                if(-not ($program -is [GaloreProgramDefinition])) {
+                    $null = $errors.Add("Program '$programName' must be a GaloreProgramDefinition.")
                     continue
                 }
-                foreach($programProperty in $requiredProgramProperties) {
-                    if(-not $program.Contains($programProperty)) {
-                        $null = $errors.Add("Program '$programName' is missing '$programProperty'.")
-                    }
+                if($program.Path.Length -gt 0 -and [string]::IsNullOrWhiteSpace($program.Path)) {
+                    $null = $errors.Add("Program '$programName' Path cannot contain only whitespace.")
                 }
-                if($program.Contains("Path") -and $null -ne $program.Path -and (-not ($program.Path -is [string]) -or [string]::IsNullOrWhiteSpace($program.Path))) {
-                    $null = $errors.Add("Program '$programName' Path must be a non-empty string or null.")
-                }
-                if($programName -eq "Phone" -and $program.Contains("Path") -and [string]::IsNullOrWhiteSpace([string]$program.Path)) {
+                if($programName -eq "Phone" -and [string]::IsNullOrWhiteSpace($program.Path)) {
                     $null = $errors.Add("Program 'Phone' requires an executable Path.")
                 }
-                if($program.Contains("Path") -and -not [string]::IsNullOrWhiteSpace([string]$program.Path) -and -not (Test-Path -LiteralPath $program.Path -PathType Leaf)) {
+                if(-not [string]::IsNullOrWhiteSpace($program.Path) -and -not (Test-Path -LiteralPath $program.Path -PathType Leaf)) {
                     $null = $errors.Add("Program '$programName' Path does not resolve to a file.")
-                }
-                if($program.Contains("Args") -and -not ($program.Args -is [string])) {
-                    $null = $errors.Add("Program '$programName' Args must be a string.")
                 }
                 foreach($processProperty in @(
                         "StatusProcess"
                         "WindowProcess"
                     )
                 ) {
-                    if($program.Contains($processProperty) -and (-not ($program.$processProperty -is [string]) -or [string]::IsNullOrWhiteSpace($program.$processProperty))) {
+                    if([string]::IsNullOrWhiteSpace($program.$processProperty)) {
                         $null = $errors.Add("Program '$programName' $processProperty must be a non-empty string.")
                     }
                 }

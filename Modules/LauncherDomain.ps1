@@ -45,6 +45,16 @@ class GaloreProgramDefinition {
         $this.BrowserDisplayName = ""
     }
 
+    GaloreProgramDefinition([string]$Path, [string]$ArgumentList, [string]$StatusProcess, [string]$WindowProcess) {
+        $this.Path = $Path
+        $this.Args = $ArgumentList
+        $this.StatusProcess = $StatusProcess
+        $this.WindowProcess = $WindowProcess
+        $this.DisplayName = ""
+        $this.BrowserId = ""
+        $this.BrowserDisplayName = ""
+    }
+
     [bool] IsConfigured() {
         return -not [string]::IsNullOrWhiteSpace($this.Path)
     }
