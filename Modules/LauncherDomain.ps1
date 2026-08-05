@@ -166,23 +166,21 @@ class GaloreWindowPlacement {
 }
 
 class GaloreLauncherSettings {
-    [int]$Version
     [string[]]$Selected
     [int]$Width
     [int]$Height
     [int]$X
     [int]$Y
-    [string]$BrowserId
+    [object]$BrowserId
     [System.Collections.IDictionary]$ProgramOverrides
 
     GaloreLauncherSettings() {
-        $this.Version = 1
         $this.Selected = @()
         $this.Width = 1100
         $this.Height = 550
         $this.X = 0
         $this.Y = 0
-        $this.BrowserId = ""
+        $this.BrowserId = $null
         $this.ProgramOverrides = [ordered]@{}
     }
 

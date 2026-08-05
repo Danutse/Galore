@@ -99,6 +99,11 @@ Describe "Launcher settings validation" {
 
 
 
+        $settings.GetType().Name |
+        Should Be "GaloreLauncherSettings"
+
+
+
         $settings.BrowserId |
         Should Be "OperaGX"
 
@@ -875,7 +880,6 @@ Describe "Hotkey settings persistence" {
         Mock Write-LauncherDiagnostic {}
 
     }
-
     It "saves and restores the launcher and category hotkeys" {
 
         Initialize-GaloreHotkeySettings
@@ -1828,6 +1832,125 @@ Describe "Hardware snapshot conversion" {
         Assert-MockCalled Remove-Job -Times 1 -Exactly -Scope It -ParameterFilter { $Id -eq 84 }
 
         Assert-MockCalled Start-Job -Times 1 -Exactly -Scope It
+
+    }
+
+}
+
+Describe "Launcher settings domain and placement" {
+
+    It "keeps the serialized settings schema flat and backward compatible" {
+
+        $settings = ConvertTo-ValidatedLauncherSettings -Settings ([pscustomobject]@{
+            Selected = @("Spotify")
+            Width = 1100
+            Height = 550
+            X = -900
+            Y = 100
+            BrowserId = $null
+            ProgramOverrides = [ordered]@{}
+        })
+
+        $json = $settings | ConvertTo-Json -Depth 4
+
+        $saved = $json | ConvertFrom-Json
+
+        $saved.Width |
+        Should Be 1100
+
+        $saved.X |
+        Should Be -900
+
+        $saved.PSObject.Properties.Name |
+        Should Not Contain "WindowPlacement"
+
+        $saved.PSObject.Properties.Name |
+        Should Not Contain "Version"
+
+    }
+
+    It "validates dictionary and object program override representations" {
+
+        $dictionarySettings = ConvertTo-ValidatedLauncherSettings -Settings ([pscustomobject]@{
+            Selected = @()
+            Width = 1100
+            Height = 550
+            X = 0
+            Y = 0
+            ProgramOverrides = [ordered]@{
+                Spotify = [pscustomobject]@{ Path = "C:\Apps\Spotify.exe"; DisplayName = "Music" }
+            }
+        })
+
+        $objectSettings = ConvertTo-ValidatedLauncherSettings -Settings ([pscustomobject]@{
+            Selected = @()
+            Width = 1100
+            Height = 550
+            X = 0
+            Y = 0
+            ProgramOverrides = [pscustomobject]@{
+                Discord = [pscustomobject]@{ Path = "C:\Apps\Discord.exe"; DisplayName = "Chat" }
+            }
+        })
+
+        $dictionarySettings.ProgramOverrides["Spotify"].DisplayName |
+        Should Be "Music"
+
+        $objectSettings.ProgramOverrides["Discord"].Path |
+        Should Be "C:\Apps\Discord.exe"
+
+    }
+
+    It "preserves visible negative coordinates and rejects truly off-screen placements" {
+
+        $leftMonitor = [System.Drawing.Rectangle]::new(-1920, 0, 1920, 1080)
+
+        $visibleSettings = [GaloreLauncherSettings]::new()
+
+        $visibleSettings.X = -900
+
+        $visibleSettings.Y = 100
+
+        Test-GaloreWindowPlacementVisible -Settings $visibleSettings -WorkingAreas @($leftMonitor) |
+        Should Be $true
+
+        $offScreenSettings = [GaloreLauncherSettings]::new()
+
+        $offScreenSettings.X = -5000
+
+        $offScreenSettings.Y = -5000
+
+        Test-GaloreWindowPlacementVisible -Settings $offScreenSettings -WorkingAreas @($leftMonitor) |
+        Should Be $false
+
+    }
+
+    It "round-trips the typed flat settings document" {
+
+        $path = Join-Path $TestDrive "settings-roundtrip.json"
+
+        $settings = ConvertTo-ValidatedLauncherSettings -Settings ([pscustomobject]@{
+            Selected = @("Spotify", "Discord")
+            Width = 1100
+            Height = 550
+            X = 25
+            Y = 50
+            BrowserId = "Firefox"
+            ProgramOverrides = [ordered]@{}
+        })
+
+        $settings | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path -Encoding UTF8
+
+        $restored = Read-LauncherSettingsFile -Path $path
+
+        $restored.GetType().Name |
+        Should Be "GaloreLauncherSettings"
+
+        @($restored.Selected) |
+        Should Contain "Spotify"
+
+        $restored.BrowserId |
+        Should Be "Firefox"
 
     }
 

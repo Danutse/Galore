@@ -5,11 +5,13 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherSettings"
     LoadOrder = 120
-    RequiresModules = @("LauncherLogging")
+    RequiresModules = @("LauncherDomain", "LauncherLogging")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"
     }
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreLauncherSettings" = "LauncherDomain"
+    }
     RequiresVariables = @()
     RequiresFolders = @()
     RequiresFiles = @()
@@ -108,7 +110,7 @@ function ConvertTo-ValidatedLauncherSettings {
         if($rawOverrides -is [System.Collections.IDictionary]) {
             $overrideNames = @($rawOverrides.Keys)
         } else {
-            $overrideNames = @($rawOverrides.PSObject.Properties.Name)
+            $overrideNames = @($rawOverrides.PSObject.Properties | ForEach-Object { $_.Name } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
         }
         foreach($overrideName in $overrideNames) {
             if([string]::IsNullOrWhiteSpace([string]$overrideName)) {
@@ -139,20 +141,32 @@ function ConvertTo-ValidatedLauncherSettings {
             }
         }
     }
-    return [pscustomobject]@{
-        Selected = $selectedPrograms
-        Width = $width
-        Height = $height
-        X = $x
-        Y = $y
-        BrowserId = $browserId
-        ProgramOverrides = $programOverrides
-    }
+    $validated = [GaloreLauncherSettings]::new()
+    $validated.Selected = [string[]]$selectedPrograms
+    $validated.Width = $width
+    $validated.Height = $height
+    $validated.X = $x
+    $validated.Y = $y
+    $validated.BrowserId = $browserId
+    $validated.ProgramOverrides = $programOverrides
+    return $validated
 }
 
 # ============================================================
 # KEEP WINDOW PLACEMENT ON A VISIBLE SCREEN
 # ============================================================
+
+function Test-GaloreWindowPlacementVisible {
+    param($Settings, [System.Drawing.Rectangle[]]$WorkingAreas)
+    $titleAreaRectangle = [System.Drawing.Rectangle]::new($Settings.X, $Settings.Y, $Settings.Width, ([math]::Min(60, $Settings.Height)))
+    foreach($workingArea in @($WorkingAreas)) {
+        $visibleRectangle = [System.Drawing.Rectangle]::Intersect($titleAreaRectangle, $workingArea)
+        if($visibleRectangle.Width -ge 120 -and $visibleRectangle.Height -ge 30) {
+            return $true
+        }
+    }
+    return $false
+}
 
 function Resolve-LauncherWindowPlacement {
     param($Settings)
@@ -162,12 +176,9 @@ function Resolve-LauncherWindowPlacement {
     if($screens.Count -eq 0) {
         return $Settings
     }
-    $titleAreaRectangle = New-Object System.Drawing.Rectangle($Settings.X, $Settings.Y, $Settings.Width, ([math]::Min(60, $Settings.Height)))
-    foreach($screen in $screens) {
-        $visibleRectangle = [System.Drawing.Rectangle]::Intersect($titleAreaRectangle, $screen.WorkingArea)
-        if($visibleRectangle.Width -ge 120 -and $visibleRectangle.Height -ge 30) {
-            return $Settings
-        }
+    $workingAreas = @($screens | ForEach-Object { $_.WorkingArea })
+    if(Test-GaloreWindowPlacementVisible -Settings $Settings -WorkingAreas $workingAreas) {
+        return $Settings
     }
     $primaryScreen = [System.Windows.Forms.Screen]::PrimaryScreen
     if($null -eq $primaryScreen) {
@@ -183,15 +194,15 @@ function Resolve-LauncherWindowPlacement {
         Write-LauncherDiagnostic -Exception $placementError -Context "Launcher window placement was reset to the primary screen."
         $script:WindowPlacementCorrectionLogged = $true
     }
-    return [pscustomobject]@{
-        Selected = @($Settings.Selected)
-        Width = $visibleWidth
-        Height = $visibleHeight
-        X = $visibleX
-        Y = $visibleY
-        BrowserId = $Settings.BrowserId
-        ProgramOverrides = $Settings.ProgramOverrides
-    }
+    $resolved = [GaloreLauncherSettings]::new()
+    $resolved.Selected = [string[]]@($Settings.Selected)
+    $resolved.Width = $visibleWidth
+    $resolved.Height = $visibleHeight
+    $resolved.X = $visibleX
+    $resolved.Y = $visibleY
+    $resolved.BrowserId = $Settings.BrowserId
+    $resolved.ProgramOverrides = $Settings.ProgramOverrides
+    return $resolved
 }
 
 # ============================================================
