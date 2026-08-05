@@ -1,6 +1,3 @@
-GALORE LAUNCHER
-
-================
 
 Galore Launcher is a Windows desktop control center for starting programs
 
@@ -8,9 +5,8 @@ tracking running applications organizing access items managing small
 
 desktop tools and keeping a personalized launcher layout.
 
-WHAT GALORE DOES
 
-----------------
+WHAT GALORE DOES
 
 - Launches or ends the programs you set up.
 
@@ -38,9 +34,8 @@ tools.
 
 quick-access layout automatically.
 
-INSTALLATION
 
-------------
+INSTALLATION
 
 1. Run GaloreLauncherSetup.exe.
 
@@ -52,9 +47,8 @@ The installed release creates its Settings, Logs and program-data folders as
 
 needed. No PowerShell module folder is required beside the installed EXE.
 
-FIRST-TIME SETUP
 
-----------------
+FIRST-TIME SETUP
 
 1. Right-click a program name to choose the executable it should manage.
 
@@ -70,30 +64,11 @@ actions.
 
 quick-access bar.
 
-Privacy
-
-----------------
-
-Your settings and personal launcher state are stored locally in Galores
-
-Settings folder. Logs are stored locally in the Logs folder. Galore does not
-
-need an account to run its normal launcher features.
 
 SUPPORT
-
--------
 
 If something does not work as it should look in the Logs folder first. Include
 
 the log entries, your Windows version and the steps that caused
 
-the problem when you report an issue.
-
-VERSION
-
--------
-
-Galore Launcher 1.0.0.0
-
-Publisher: Galore Inc.
+the problem when you report an issue. Pretty Please
