@@ -5,12 +5,14 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherHardware"
     LoadOrder = 60
-    RequiresModules = @("LauncherLogging")
+    RequiresModules = @("LauncherDomain", "LauncherLogging")
     RequiresFunctions = [ordered]@{
         "Write-GaloreLog" = "LauncherLogging"
         "Write-LauncherDiagnostic" = "LauncherLogging"
     }
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreHardwareSnapshot" = "LauncherDomain"
+    }
     RequiresVariables = @("AppRoot")
     RequiresFolders = @()
     RequiresFiles = @()
@@ -21,12 +23,7 @@ $GaloreModuleManifest = [ordered]@{
 # SYSTEM MONITOR CACHE
 # ============================================================
 
-$script:SystemUsageCache = @{
-    CPU = 0
-    RAM = 0
-    GPU = 0
-    GPUTemp = 0
-}
+$script:SystemUsageCache = [GaloreHardwareSnapshot]::new()
 
 # ============================================================
 # RAM CLEANER
@@ -126,16 +123,29 @@ function Initialize-RAMCleanupSchedule {
 # BACKGROUND HARDWARE MONITOR
 # ============================================================
 
-$NvidiaSensorReaderPath = Join-Path $AppRoot "Programs\NvidiaSensor\NvidiaSensorReader.exe"
-if(Test-Path -LiteralPath $NvidiaSensorReaderPath -PathType Leaf) {
-    Write-GaloreLog -Level "INFO" -Component "Hardware" -Message "NVIDIA sensor reader available."
-} else {
-    Write-GaloreLog -Level "WARNING" -Component "Hardware" -Message "NVIDIA sensor reader unavailable; GPU fallback values will be used."
-}
-Write-GaloreLog -Level "INFO" -Component "Hardware" -Message "Background hardware monitor started."
-$hardwareDiagnosticLogPath = Join-Path $AppRoot "Logs\Diagnostics.log"
-$hardwareActivityLogPath = Join-Path $AppRoot "Logs\GaloreLauncher.log"
-$script:HardwareJob = Start-Job -ArgumentList $AppRoot,$hardwareDiagnosticLogPath,$hardwareActivityLogPath -ScriptBlock {
+$script:HardwareJob = $null
+
+function Initialize-HardwareMonitorJob {
+    if($script:HardwareJob) {
+        if($script:HardwareJob.State -eq [System.Management.Automation.JobState]::Running) {
+            return
+        }
+        $staleJobId = $script:HardwareJob.Id
+        Stop-Job -Id $staleJobId -ErrorAction SilentlyContinue
+        Receive-Job -Id $staleJobId -ErrorAction SilentlyContinue | Out-Null
+        Remove-Job -Id $staleJobId -Force -ErrorAction SilentlyContinue
+        $script:HardwareJob = $null
+    }
+    $NvidiaSensorReaderPath = Join-Path $AppRoot "Programs\NvidiaSensor\NvidiaSensorReader.exe"
+    if(Test-Path -LiteralPath $NvidiaSensorReaderPath -PathType Leaf) {
+        Write-GaloreLog -Level "INFO" -Component "Hardware" -Message "NVIDIA sensor reader available."
+    } else {
+        Write-GaloreLog -Level "WARNING" -Component "Hardware" -Message "NVIDIA sensor reader unavailable; GPU fallback values will be used."
+    }
+    Write-GaloreLog -Level "INFO" -Component "Hardware" -Message "Background hardware monitor started."
+    $hardwareDiagnosticLogPath = Join-Path $AppRoot "Logs\Diagnostics.log"
+    $hardwareActivityLogPath = Join-Path $AppRoot "Logs\GaloreLauncher.log"
+    $script:HardwareJob = Start-Job -ArgumentList $AppRoot,$hardwareDiagnosticLogPath,$hardwareActivityLogPath -ScriptBlock {
     param($monitorRoot, $diagnosticLogPath, $activityLogPath)
     $ErrorActionPreference = "Stop"
     $loggedHardwareErrors = @{}
@@ -214,25 +224,54 @@ $stackTrace
         }
         Start-Sleep -Seconds 1
     }
+    }
 }
 
 # ============================================================
 # HARDWARE CACHE READER
 # ============================================================
 
+function ConvertTo-GaloreHardwareNumber {
+    param($Value)
+    $number = 0.0
+    $parsed = $null -ne $Value -and (
+        [double]::TryParse([string]$Value, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$number) -or
+        [double]::TryParse([string]$Value, [ref]$number)
+    )
+    if($parsed -and -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number)) {
+        return $number
+    }
+    return 0.0
+}
+
+function ConvertTo-GaloreHardwareSnapshot {
+    param($Data)
+    if($null -eq $Data) {
+        return [GaloreHardwareSnapshot]::new()
+    }
+    return [GaloreHardwareSnapshot]::new(
+        (ConvertTo-GaloreHardwareNumber $Data.CPU),
+        (ConvertTo-GaloreHardwareNumber $Data.RAM),
+        (ConvertTo-GaloreHardwareNumber $Data.GPU),
+        (ConvertTo-GaloreHardwareNumber $Data.GPUTemp)
+    )
+}
+
 function Initialize-HardwareCacheReader {
+    Initialize-HardwareMonitorJob
+    if($script:HardwareReadTimer -and -not $script:HardwareReadTimer.IsDisposed) {
+        if(-not $script:HardwareReadTimer.Enabled) {
+            $script:HardwareReadTimer.Start()
+        }
+        return
+    }
     $script:HardwareReadTimer = New-Object System.Windows.Forms.Timer
     $script:HardwareReadTimer.Interval = 100
     $script:HardwareReadTimer.Add_Tick({
         $data = Receive-Job $script:HardwareJob
         if($data) {
             $latest = $data | Select-Object -Last 1
-            $script:SystemUsageCache = @{
-                CPU = $latest.CPU
-                RAM = $latest.RAM
-                GPU = $latest.GPU
-                GPUTemp = $latest.GPUTemp
-            }
+            $script:SystemUsageCache = ConvertTo-GaloreHardwareSnapshot $latest
         }
     })
     $script:HardwareReadTimer.Start()

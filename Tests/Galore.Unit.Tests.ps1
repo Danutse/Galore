@@ -78,6 +78,8 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherMaintenance.ps1")
 
+. (Join-Path $moduleRoot "LauncherHardware.ps1")
+
 
 
 Describe "Launcher settings validation" {
@@ -1436,6 +1438,205 @@ Describe "Domain model contracts" {
 
         $snapshot.GPUTemp |
         Should Be 78
+
+    }
+
+}
+
+Describe "Hardware snapshot conversion" {
+
+    BeforeEach {
+
+        $script:HardwareJob = $null
+
+        if($script:HardwareReadTimer -and -not $script:HardwareReadTimer.IsDisposed) {
+
+            $script:HardwareReadTimer.Dispose()
+
+        }
+
+        $script:HardwareReadTimer = $null
+
+    }
+
+    AfterEach {
+
+        if($script:HardwareReadTimer -and -not $script:HardwareReadTimer.IsDisposed) {
+
+            $script:HardwareReadTimer.Dispose()
+
+        }
+
+        $script:HardwareReadTimer = $null
+
+        $script:HardwareJob = $null
+
+    }
+
+    It "does not start the background monitor as an import side effect" {
+
+        $script:HardwareJob |
+        Should BeNullOrEmpty
+
+    }
+
+    It "normalizes serialized numeric values into a typed snapshot" {
+
+        $snapshot = ConvertTo-GaloreHardwareSnapshot ([pscustomobject]@{
+            CPU = "12"
+            RAM = 34
+            GPU = "56.5"
+            GPUTemp = 78
+        })
+
+        $snapshot.GetType().Name |
+        Should Be "GaloreHardwareSnapshot"
+
+        $snapshot.CPU |
+        Should Be 12
+
+        $snapshot.RAM |
+        Should Be 34
+
+        $snapshot.GPU |
+        Should Be 56.5
+
+        $snapshot.GPUTemp |
+        Should Be 78
+
+    }
+
+    It "uses safe zero values for missing, malformed, or non-finite readings" {
+
+        $snapshot = ConvertTo-GaloreHardwareSnapshot ([pscustomobject]@{
+            CPU = $null
+            RAM = "invalid"
+            GPU = "NaN"
+            GPUTemp = "Infinity"
+        })
+
+        $snapshot.CPU |
+        Should Be 0
+
+        $snapshot.RAM |
+        Should Be 0
+
+        $snapshot.GPU |
+        Should Be 0
+
+        $snapshot.GPUTemp |
+        Should Be 0
+
+    }
+
+    It "reuses an existing running hardware job" {
+
+        $script:HardwareJob = [pscustomobject]@{
+            State = [System.Management.Automation.JobState]::Running
+        }
+
+        Mock Start-Job {}
+
+        Initialize-HardwareMonitorJob
+
+        Assert-MockCalled Start-Job -Times 0 -Exactly -Scope It
+
+    }
+
+    It "removes a stale hardware job before starting its replacement" {
+
+        $staleJob = [pscustomobject]@{
+            Id = 42
+            State = [System.Management.Automation.JobState]::Failed
+        }
+
+        $replacementJob = [pscustomobject]@{
+            State = [System.Management.Automation.JobState]::Running
+        }
+
+        $script:HardwareJob = $staleJob
+
+        Mock Stop-Job {}
+
+        Mock Receive-Job {}
+
+        Mock Remove-Job {}
+
+        Mock Start-Job { $replacementJob }
+
+        Initialize-HardwareMonitorJob
+
+        Assert-MockCalled Stop-Job -Times 1 -Exactly -Scope It -ParameterFilter { $Id -eq 42 }
+
+        Assert-MockCalled Receive-Job -Times 1 -Exactly -Scope It -ParameterFilter { $Id -eq 42 }
+
+        Assert-MockCalled Remove-Job -Times 1 -Exactly -Scope It -ParameterFilter { $Id -eq 42 }
+
+        Assert-MockCalled Start-Job -Times 1 -Exactly -Scope It
+
+        $script:HardwareJob |
+        Should Be $replacementJob
+
+    }
+
+    It "keeps one cache-reader timer across repeated initialization" {
+
+        $script:HardwareJob = [pscustomobject]@{
+            Id = 21
+            State = [System.Management.Automation.JobState]::Running
+        }
+
+        Mock Start-Job {}
+
+        Initialize-HardwareCacheReader
+
+        $firstTimer = $script:HardwareReadTimer
+
+        Initialize-HardwareCacheReader
+
+        [object]::ReferenceEquals($firstTimer, $script:HardwareReadTimer) |
+        Should Be $true
+
+        Assert-MockCalled Start-Job -Times 0 -Exactly -Scope It
+
+    }
+
+    It "replaces a failed job while retaining the existing cache-reader timer" {
+
+        $timer = New-Object System.Windows.Forms.Timer
+
+        $timer.Interval = 100
+
+        $script:HardwareReadTimer = $timer
+
+        $script:HardwareJob = [pscustomobject]@{
+            Id = 84
+            State = [System.Management.Automation.JobState]::Failed
+        }
+
+        $replacementJob = [pscustomobject]@{
+            State = [System.Management.Automation.JobState]::Running
+        }
+
+        Mock Stop-Job {}
+
+        Mock Receive-Job {}
+
+        Mock Remove-Job {}
+
+        Mock Start-Job { $replacementJob }
+
+        Initialize-HardwareCacheReader
+
+        [object]::ReferenceEquals($timer, $script:HardwareReadTimer) |
+        Should Be $true
+
+        $script:HardwareJob |
+        Should Be $replacementJob
+
+        Assert-MockCalled Remove-Job -Times 1 -Exactly -Scope It -ParameterFilter { $Id -eq 84 }
+
+        Assert-MockCalled Start-Job -Times 1 -Exactly -Scope It
 
     }
 
