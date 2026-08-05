@@ -85,6 +85,7 @@ try {
     Publish-GaloreModuleFunctions -ModuleSource $LauncherLoggingModuleSource
     $script:GaloreBootstrapLoggingManifest = $GaloreModuleManifest
     Write-GaloreLog -Level "INFO" -Component "Startup" -Message "Galore logging subsystem initialized."
+    Initialize-GaloreWinFormsErrorBoundary
 } catch {
     try {
         Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop

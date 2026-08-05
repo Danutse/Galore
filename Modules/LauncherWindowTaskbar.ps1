@@ -7,7 +7,9 @@ $GaloreModuleManifest = [ordered]@{
     LoadOrder = 250
     RequiresModules = @("LauncherAlphaOverlay", "LauncherDomain", "LauncherLogging")
     RequiresFunctions = [ordered]@{
+        "Write-GaloreLog" = "LauncherLogging"
         "Write-LauncherDiagnostic" = "LauncherLogging"
+        "Invoke-GaloreEventSafely" = "LauncherLogging"
         "Register-GaloreOverlayForm" = "LauncherAlphaOverlay"
         "Unregister-GaloreOverlayForm" = "LauncherAlphaOverlay"
         "Set-GaloreOverlayLifecycleReady" = "LauncherAlphaOverlay"
@@ -199,16 +201,30 @@ function Get-GaloreWindowTaskbarIcon {
     param([uint32]$ProcessId)
     $process = $null
     $icon = $null
+    $bitmap = $null
+    $foundProcess = $false
     try {
         $process = [System.Diagnostics.Process]::GetProcessById($ProcessId)
+        $foundProcess = $true
         $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($process.MainModule.FileName)
-        return [GaloreAlphaOverlay.PerPixelAlphaForm]::IconToAlphaBitmap($icon, 32, 32)
+        if($icon) {
+            $bitmap = [GaloreAlphaOverlay.PerPixelAlphaForm]::IconToAlphaBitmap($icon, 32, 32)
+        }
     } catch {
-        return $null
     } finally {
         if($icon) { $icon.Dispose() }
         if($process) { $process.Dispose() }
     }
+    if($bitmap) {
+        return $bitmap
+    }
+    if($foundProcess) {
+        try {
+            return [GaloreAlphaOverlay.PerPixelAlphaForm]::IconToAlphaBitmap([System.Drawing.SystemIcons]::Application, 32, 32)
+        } catch {
+        }
+    }
+    return $null
 }
 
 function Set-GaloreWindowTaskbarLocation {
@@ -243,13 +259,23 @@ function Update-GaloreWindowTaskbar {
         return
     }
     try {
+        $bar = $Runtime.Bar
+        $ownerForm = $Runtime.OwnerForm
+        $shouldBeVisible = $ownerForm -and -not $ownerForm.IsDisposed -and $ownerForm.Visible -and $ownerForm.WindowState -ne [System.Windows.Forms.FormWindowState]::Minimized -and $script:GaloreOverlayRuntime.TargetVisible
+        if($shouldBeVisible -and -not $bar.Visible) {
+            $bar.Show()
+            Set-GaloreWindowTaskbarLocation -Form $ownerForm -Runtime $Runtime
+            $bar.SetLayeredOpacity(255)
+            $bar.BringToFront()
+            Write-GaloreLog -Level "INFO" -Component "WindowTaskbar" -Message "Restored the live window taskbar display."
+        }
         $windows = @([GaloreWindowTaskbar.Native]::GetTaskbarWindows($PID))
         $signature = Get-GaloreWindowTaskbarSignature -Windows $windows
         if($signature -eq $Runtime.Signature) {
             return
         }
         $Runtime.Signature = $signature
-        $bar = $Runtime.Bar
+        Write-GaloreLog -Level "INFO" -Component "WindowTaskbar" -Message "Rendered $($windows.Count) visible Windows taskbar item(s)."
         if(-not $Runtime.ToolTip) {
             $Runtime.ToolTip = New-Object System.Windows.Forms.ToolTip
         }
@@ -276,16 +302,6 @@ function Update-GaloreWindowTaskbar {
             $entry.BackColor = Get-GaloreWindowTaskbarKeyColor -Runtime $Runtime
             $entry.Image = Get-GaloreWindowTaskbarIcon -ProcessId $window.ProcessId
             $entry.Tag = $window
-            $entry.Add_Click({
-                param($sender, $e)
-                [GaloreWindowTaskbar.Native]::ActivateOrMinimize($sender.Tag.Handle)
-            })
-            $entry.Add_MouseUp({
-                param($sender, $e)
-                if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
-                    [GaloreWindowTaskbar.Native]::RequestClose($sender.Tag.Handle)
-                }
-            })
             $Runtime.ToolTip.SetToolTip($entry, "$($window.Title)`nRight-click to close")
             $entry.Visible = $false
             $bar.Controls.Add($entry)
@@ -338,15 +354,17 @@ function Initialize-GaloreWindowTaskbar {
     $bar.Owner = $Form
     $bar.Add_MouseUp({
         param($sender, $e)
-        $entry = @($sender.Controls | Where-Object { $_.Bounds.Contains($e.Location) }) | Select-Object -First 1
-        if($null -eq $entry) {
-            return
-        }
-        if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
-            [GaloreWindowTaskbar.Native]::RequestClose($entry.Tag.Handle)
-        } elseif($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-            [GaloreWindowTaskbar.Native]::ActivateOrMinimize($entry.Tag.Handle)
-        }
+        Invoke-GaloreEventSafely -Context "Window taskbar icon interaction failed." -Action {
+            $entry = @($sender.Controls | Where-Object { $_.Bounds.Contains($e.Location) }) | Select-Object -First 1
+            if($null -eq $entry) {
+                return
+            }
+            if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
+                [GaloreWindowTaskbar.Native]::RequestClose($entry.Tag.Handle)
+            } elseif($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+                [GaloreWindowTaskbar.Native]::ActivateOrMinimize($entry.Tag.Handle)
+            }
+        }.GetNewClosure() | Out-Null
     }.GetNewClosure())
     $bar.Add_FormClosed({
         param($sender, $e)
@@ -381,12 +399,19 @@ function Initialize-GaloreWindowTaskbar {
     $runtime.SizeChangedHandler = { param($sender, $e) Set-GaloreWindowTaskbarLocation -Form $sender -Runtime $runtime }.GetNewClosure()
     $runtime.FormClosedHandler = { param($sender, $e) if([object]::ReferenceEquals($runtime.OwnerForm, $sender)) { Stop-GaloreWindowTaskbar -Runtime $runtime } }.GetNewClosure()
     $runtime.ShownHandler = {
-        $bar.SetLayeredOpacity(0)
-        $bar.Show()
-        Set-GaloreWindowTaskbarLocation -Form $Form -Runtime $runtime
-        Update-GaloreWindowTaskbar -Runtime $runtime
-        Set-GaloreOverlayLifecycleReady -Ready $true
-        Show-GaloreLauncherOverlayBars -DurationMilliseconds 420
+        Invoke-GaloreEventSafely -Context "Window taskbar startup lifecycle failed." -Action {
+            if($null -eq $runtime.Bar -or $runtime.Bar.IsDisposed) {
+                return
+            }
+            $runtime.Bar.SetLayeredOpacity(0)
+            $runtime.Bar.Show()
+            Set-GaloreWindowTaskbarLocation -Form $Form -Runtime $runtime
+            Update-GaloreWindowTaskbar -Runtime $runtime
+            $runtime.Bar.SetLayeredOpacity(255)
+            $runtime.Bar.BringToFront()
+            Set-GaloreOverlayLifecycleReady -Ready $true
+            Show-GaloreLauncherOverlayBars -DurationMilliseconds 420
+        }.GetNewClosure() | Out-Null
     }.GetNewClosure()
     $Form.Add_Move($runtime.MoveHandler)
     $Form.Add_SizeChanged($runtime.SizeChangedHandler)

@@ -33,6 +33,7 @@ if(-not (Test-Path -LiteralPath $script:GaloreActivityLogFile -PathType Leaf) -a
     }
 }
 $script:LauncherFatalReported = $false
+$script:GaloreWinFormsThreadExceptionHandler = $null
 
 # ============================================================
 # WRITE GALORE ACTIVITY LOG
@@ -258,4 +259,54 @@ $Stack
 function Write-LauncherDiagnostic {
     param($Exception, [string]$Context)
     Write-GaloreLog -Level "ERROR" -Exception $Exception -Context $Context
+}
+
+# ============================================================
+# WINFORMS EVENT ERROR BOUNDARIES
+# ============================================================
+
+function Invoke-GaloreEventSafely {
+    param([scriptblock]$Action, [string]$Context = "Unhandled Galore UI event.")
+    if($null -eq $Action) {
+        return $false
+    }
+    try {
+        & $Action
+        return $true
+    } catch {
+        Write-LauncherDiagnostic -Exception $_ -Context $Context
+        return $false
+    }
+}
+
+function Initialize-GaloreWinFormsErrorBoundary {
+    if($null -ne $script:GaloreWinFormsThreadExceptionHandler) {
+        return
+    }
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+        $script:GaloreWinFormsThreadExceptionHandler = [System.Threading.ThreadExceptionEventHandler]{
+            param($sender, $eventArgs)
+            if($eventArgs -and $eventArgs.Exception) {
+                Write-LauncherDiagnostic -Exception $eventArgs.Exception -Context "Unhandled WinForms event was contained by the Galore UI boundary."
+            }
+        }
+        [System.Windows.Forms.Application]::add_ThreadException($script:GaloreWinFormsThreadExceptionHandler)
+        Write-GaloreLog -Level "INFO" -Component "UI" -Message "WinForms event error boundary initialized."
+    } catch {
+        $script:GaloreWinFormsThreadExceptionHandler = $null
+        Write-LauncherDiagnostic -Exception $_ -Context "Failed to initialize the WinForms event error boundary."
+    }
+}
+
+function Stop-GaloreWinFormsErrorBoundary {
+    if($null -eq $script:GaloreWinFormsThreadExceptionHandler) {
+        return
+    }
+    try {
+        [System.Windows.Forms.Application]::remove_ThreadException($script:GaloreWinFormsThreadExceptionHandler)
+    } catch {
+    }
+    $script:GaloreWinFormsThreadExceptionHandler = $null
 }

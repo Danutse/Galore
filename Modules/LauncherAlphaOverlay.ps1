@@ -486,10 +486,12 @@ function Register-GaloreOverlayLifecycle {
     if($null -eq $Runtime -or $null -eq $Form -or $Form.IsDisposed) {
         return
     }
-    if([object]::ReferenceEquals($Runtime.OwnerForm, $Form) -and $Runtime.IsRegistered) {
-        return
+    if($Runtime.IsRegistered) {
+        if([object]::ReferenceEquals($Runtime.OwnerForm, $Form)) {
+            return
+        }
+        Stop-GaloreOverlayResources -Runtime $Runtime
     }
-    Stop-GaloreOverlayResources -Runtime $Runtime
     $Runtime.OwnerForm = $Form
     $Runtime.ResizeHandler = {
         param($sender, $e)

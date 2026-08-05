@@ -19,6 +19,7 @@ $GaloreModuleManifest = [ordered]@{
         "New-HotkeysButton" = "UI"
         "Set-GaloreTransparentWindowRegion" = "LauncherAlphaOverlay"
         "Write-LauncherDiagnostic" = "LauncherLogging"
+        "Invoke-GaloreEventSafely" = "LauncherLogging"
         "Get-GaloreCategoryById" = "LauncherCategories"
     }
     RequiresTypes = [ordered]@{
@@ -269,12 +270,14 @@ function Initialize-GaloreHotkeyButton {
     $Runtime.ToolTip.SetToolTip($button, "Hotkeys")
     $button.Add_Click({
         param($sender, $event)
-        $runtime = $this.HotkeySettingsRuntime
-        if($runtime.Popup -and -not $runtime.Popup.IsDisposed) {
-            $runtime.Popup.Close()
-            return
-        }
-        Show-GaloreHotkeySettingsPopup -Anchor $sender -Runtime $runtime
+        Invoke-GaloreEventSafely -Context "Hotkey settings button click failed." -Action {
+            $runtime = $sender.HotkeySettingsRuntime
+            if($runtime.Popup -and -not $runtime.Popup.IsDisposed) {
+                $runtime.Popup.Close()
+                return
+            }
+            Show-GaloreHotkeySettingsPopup -Anchor $sender -Runtime $runtime
+        }.GetNewClosure() | Out-Null
     })
     $button | Add-Member -MemberType NoteProperty -Name HotkeySettingsRuntime -Value $Runtime -Force
     $Form.Controls.Add($button)

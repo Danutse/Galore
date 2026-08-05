@@ -93,6 +93,28 @@ $GaloreRoot
 . (Join-Path $moduleRoot "LauncherAction.ps1")
 
 
+Describe "WinForms event error boundaries" {
+
+    It "returns success when an event action completes" {
+
+        (Invoke-GaloreEventSafely -Context "Test event." -Action { $null = 1 }) |
+        Should Be $true
+    }
+
+    It "contains an event exception and writes a diagnostic" {
+
+        Mock Write-LauncherDiagnostic {}
+
+        (Invoke-GaloreEventSafely -Context "Test event failure." -Action { throw "Expected test event failure." }) |
+        Should Be $false
+
+        Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly -ParameterFilter {
+            $Context -eq "Test event failure."
+        }
+    }
+}
+
+
 
 Describe "Launcher settings validation" {
 
@@ -1096,6 +1118,29 @@ Describe "Alpha overlay helpers" {
             $secondForm.Dispose()
         }
 
+    }
+
+    It "keeps registered overlay bars when their lifecycle owner is initialized" {
+
+        Stop-GaloreOverlayResources
+        $owner = New-Object System.Windows.Forms.Form
+        $quickAccess = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+        $windowTaskbar = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+
+        try {
+            Register-GaloreOverlayForm -Form $quickAccess
+            Register-GaloreOverlayForm -Form $windowTaskbar
+            Register-GaloreOverlayLifecycle -Form $owner
+
+            $script:GaloreOverlayRuntime.OverlayForms.Count | Should Be 2
+            $script:GaloreOverlayRuntime.OverlayForms | Should Contain $quickAccess
+            $script:GaloreOverlayRuntime.OverlayForms | Should Contain $windowTaskbar
+        } finally {
+            Stop-GaloreOverlayResources
+            $quickAccess.Dispose()
+            $windowTaskbar.Dispose()
+            $owner.Dispose()
+        }
     }
 
     It "converts an icon to a correctly sized premultiplied-alpha bitmap" {

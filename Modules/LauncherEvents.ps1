@@ -9,6 +9,7 @@ $GaloreModuleManifest = [ordered]@{
     RequiresFunctions = [ordered]@{
         "Write-GaloreLog" = "LauncherLogging"
         "Write-LauncherDiagnostic" = "LauncherLogging"
+        "Stop-GaloreWinFormsErrorBoundary" = "LauncherLogging"
         "Clear-RAM" = "LauncherHardware"
         "Save-WindowSettings" = "LauncherSettings"
         "Close-StartSearchWindowAnimated" = "LauncherStartMenu"
@@ -219,6 +220,7 @@ function Stop-LauncherRuntimeResources {
             "Stop-GaloreQuickAccessResources"
             "Stop-GaloreWindowTaskbar"
             "Stop-GaloreOverlayResources"
+            "Stop-GaloreWinFormsErrorBoundary"
         )
     ) {
         if(Get-Command -Name $stopFunction -CommandType Function -ErrorAction SilentlyContinue) {

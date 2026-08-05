@@ -132,7 +132,7 @@ try
     -company "Galore Inc." `
     -product "Galore Launcher" `
     -trademark "Galore" `
-    -version "1.0.1.0" `
+    -version "1.0.1.1" `
     -copyright "Copyright (c) 2026 Galore Inc."
 
     if(-not (Test-Path -LiteralPath $temporaryOutput -PathType Leaf))

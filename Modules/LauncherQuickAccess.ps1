@@ -9,6 +9,7 @@ $GaloreModuleManifest = [ordered]@{
     RequiresFunctions = [ordered]@{
         "Get-LauncherSettingsFolder" = "LauncherSettings"
         "Write-LauncherDiagnostic" = "LauncherLogging"
+        "Invoke-GaloreEventSafely" = "LauncherLogging"
         "Register-GaloreOverlayForm" = "LauncherAlphaOverlay"
         "Unregister-GaloreOverlayForm" = "LauncherAlphaOverlay"
     }
@@ -154,7 +155,9 @@ function Register-GaloreQuickAccessDropTarget {
     })
     $Target.Add_DragDrop({
         param($sender, $e)
-        Add-GaloreQuickAccessDroppedItems -Data $e.Data -Runtime $Runtime
+        Invoke-GaloreEventSafely -Context "Quick-access drop handling failed." -Action {
+            Add-GaloreQuickAccessDroppedItems -Data $e.Data -Runtime $Runtime
+        }.GetNewClosure() | Out-Null
     }.GetNewClosure())
 }
 
@@ -404,14 +407,16 @@ function Initialize-GaloreQuickAccessBar {
     $Runtime.SizeChangedHandler = { param($sender, $e) Set-GaloreQuickAccessBarLocation -LauncherForm $sender -Runtime $Runtime }.GetNewClosure()
     $Runtime.ShownHandler = {
         param($sender, $e)
-        if($Runtime.IsStopping -or -not [object]::ReferenceEquals($Runtime.OwnerForm, $sender) -or $null -eq $Runtime.Bar -or $Runtime.Bar.IsDisposed) {
-            return
-        }
-        $Runtime.Bar.SetLayeredOpacity(0)
-        $Runtime.Bar.Show()
-        $Runtime.Bar.ClientSize = [System.Drawing.Size]::new($sender.ClientSize.Width, 44)
-        Set-GaloreQuickAccessBarLocation -LauncherForm $sender -Runtime $Runtime
-        Update-GaloreQuickAccessBar -Runtime $Runtime
+        Invoke-GaloreEventSafely -Context "Quick-access bar startup lifecycle failed." -Action {
+            if($Runtime.IsStopping -or -not [object]::ReferenceEquals($Runtime.OwnerForm, $sender) -or $null -eq $Runtime.Bar -or $Runtime.Bar.IsDisposed) {
+                return
+            }
+            $Runtime.Bar.SetLayeredOpacity(0)
+            $Runtime.Bar.Show()
+            $Runtime.Bar.ClientSize = [System.Drawing.Size]::new($sender.ClientSize.Width, 44)
+            Set-GaloreQuickAccessBarLocation -LauncherForm $sender -Runtime $Runtime
+            Update-GaloreQuickAccessBar -Runtime $Runtime
+        }.GetNewClosure() | Out-Null
     }.GetNewClosure()
     $Runtime.FormClosedHandler = {
         param($sender, $e)
