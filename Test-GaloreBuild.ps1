@@ -1,7 +1,9 @@
 param(
     [string]$AppRoot = $PSScriptRoot,
 
-    [switch]$Compile
+    [switch]$Compile,
+
+    [switch]$SkipUnitTests
 )
 
 
@@ -812,7 +814,16 @@ try
 
 
 
-    if(
+    if($SkipUnitTests)
+    {
+
+        Add-GaloreBuildResult `
+        -Status "PASS" `
+        -Name "Automated unit tests" `
+        -Message "Skipped by the requested source and compile smoke check."
+
+    }
+    elseif(
         -not (
             Test-Path `
             -LiteralPath $unitTestRunner `

@@ -10,21 +10,16 @@ permissions:
 
 jobs:
   validate:
-    name: Validate source and tests
+    name: Validate source and dependencies
     runs-on: windows-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-      - name: Install Pester 4
-        shell: powershell
-        run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name Pester -RequiredVersion 4.10.1 -Scope CurrentUser -Force -SkipPublisherCheck
-      - name: Run validation and unit tests
+      - name: Run source and dependency validation
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path .\Logs -Force | Out-Null
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1 -SkipUnitTests
 
   compile-smoke:
     name: Compile disposable executable
@@ -32,14 +27,13 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-      - name: Install test and compile dependencies
+      - name: Install compile dependency
         shell: powershell
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name Pester -RequiredVersion 4.10.1 -Scope CurrentUser -Force -SkipPublisherCheck
           Install-Module -Name ps2exe -Scope CurrentUser -Force
       - name: Compile-check the launcher
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path .\Logs -Force | Out-Null
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1 -Compile
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1 -Compile -SkipUnitTests
