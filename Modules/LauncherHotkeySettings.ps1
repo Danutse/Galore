@@ -12,6 +12,8 @@ $GaloreModuleManifest = [ordered]@{
         "Set-GaloreLauncherToggleHotkey" = "LauncherHotkeys"
         "Set-GaloreCategoryHotkey" = "LauncherHotkeys"
         "Set-GaloreHotkeyDefinitions" = "LauncherHotkeys"
+        "Suspend-GaloreHotkeys" = "LauncherHotkeys"
+        "Resume-GaloreHotkeys" = "LauncherHotkeys"
         "New-GaloreSystemToolPopup" = "LauncherSystemTools"
         "Show-GaloreSystemToolPopup" = "LauncherSystemTools"
         "New-HotkeysButton" = "UI"
@@ -91,16 +93,16 @@ function Show-GaloreHotkeySettingsPopup {
     }
     for($index = 0; $index -lt $hotkeyRows.Count; $index++) {
         $row = $hotkeyRows[$index]
-        $top = 79 + ($index * 32)
+        $top = 74 + ($index * 26)
         $label = New-Object System.Windows.Forms.Label
-        $label.Bounds = [System.Drawing.Rectangle]::new(28, $top, 160, 24)
+        $label.Bounds = [System.Drawing.Rectangle]::new(28, $top, 160, 22)
         $label.Text = $row.Name
         $label.ForeColor = [System.Drawing.Color]::White
         $label.BackColor = [System.Drawing.Color]::Transparent
         $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
         $popup.Controls.Add($label)
         $capture = New-Object System.Windows.Forms.TextBox
-        $capture.Bounds = [System.Drawing.Rectangle]::new(190, $top - 1, $popup.ClientSize.Width - 218, 27)
+        $capture.Bounds = [System.Drawing.Rectangle]::new(190, $top - 1, $popup.ClientSize.Width - 218, 24)
         $capture.ReadOnly = $true
         $capture.TabStop = $true
         $capture.Cursor = [System.Windows.Forms.Cursors]::Hand
@@ -112,6 +114,7 @@ function Show-GaloreHotkeySettingsPopup {
         $capture.Add_Click({
             param($sender, $event)
             $script:GaloreHotkeyCaptureField = $sender
+            Suspend-GaloreHotkeys
             $sender.Text = "Press shortcut..."
             $captureStatus.Text = "Listening for a shortcut. Press Esc to cancel."
             $captureStatus.ForeColor = [System.Drawing.Color]::Gold
@@ -121,6 +124,7 @@ function Show-GaloreHotkeySettingsPopup {
         $hotkeyFields[$row.Id] = $capture
         $popup.Controls.Add($capture)
     }
+    $captureStatus.Location = [System.Drawing.Point]::new(28, $popup.ClientSize.Height - 76)
     $popup.Add_KeyDown({
         param($sender, $event)
         $field = $script:GaloreHotkeyCaptureField
@@ -128,6 +132,7 @@ function Show-GaloreHotkeySettingsPopup {
         if($event.KeyCode -eq [System.Windows.Forms.Keys]::Escape) {
             $field.Text = if($script:GalorePendingHotkeys.ContainsKey($field.Tag)) { $script:GalorePendingHotkeys[$field.Tag].DisplayText } elseif($field.Tag -eq "LauncherToggle") { (Get-GaloreLauncherToggleHotkey).DisplayText } else { (Get-GaloreCategoryHotkey -CategoryId $field.Tag).DisplayText }
             $script:GaloreHotkeyCaptureField = $null
+            Resume-GaloreHotkeys | Out-Null
             $captureStatus.Text = "Shortcut capture cancelled."
             $captureStatus.ForeColor = [System.Drawing.Color]::Gainsboro
             $event.SuppressKeyPress = $true
@@ -184,7 +189,7 @@ function Show-GaloreHotkeySettingsPopup {
         [System.Windows.Forms.MessageBox]::Show("Galore hotkeys were saved successfully.", "Galore Launcher", "OK", "Information") | Out-Null
         $popup.Close()
     }.GetNewClosure())
-    $popup.Add_FormClosed({ $script:GalorePendingHotkeys = @{}; $script:GaloreHotkeyCaptureField = $null; $script:GaloreHotkeySettingsPopup = $null })
+    $popup.Add_FormClosed({ Resume-GaloreHotkeys | Out-Null; $script:GalorePendingHotkeys = @{}; $script:GaloreHotkeyCaptureField = $null; $script:GaloreHotkeySettingsPopup = $null })
     $script:GaloreHotkeySettingsPopup = $popup
     Show-GaloreSystemToolPopup -Popup $popup -Owner $Anchor.FindForm()
 }

@@ -385,7 +385,21 @@ function Set-GaloreHotkeyDefinitions {
     $script:GaloreLauncherHotkey = [pscustomobject]@{ ModifierMask = [int]$LauncherToggle.ModifierMask; VirtualKey = [int]$LauncherToggle.VirtualKey; DisplayText = [string]$LauncherToggle.DisplayText }
     foreach($categoryNumber in 1..4) { $categoryId = "Category$categoryNumber"; $definition = $CategoryHotkeys[$categoryId]; $script:GaloreCategoryHotkeys[$categoryId] = [pscustomobject]@{ ModifierMask = [int]$definition.ModifierMask; VirtualKey = [int]$definition.VirtualKey; DisplayText = [string]$definition.DisplayText } }
     Save-GaloreHotkeySettings
+    $script:GaloreHotkeysSuspended = $false
     return $true
+}
+
+function Suspend-GaloreHotkeys {
+    if($script:GaloreHotkeysSuspended -or -not $script:GlobalHotkeyHandle) { return }
+    foreach($hotkeyId in @(5000, 5101, 5102, 5103, 5104)) { [GlobalHotkey]::UnregisterHotKey($script:GlobalHotkeyHandle, $hotkeyId) | Out-Null }
+    $script:GaloreHotkeysSuspended = $true
+}
+
+function Resume-GaloreHotkeys {
+    if(-not $script:GaloreHotkeysSuspended) { return $true }
+    $categoryHotkeys = [ordered]@{}
+    foreach($categoryNumber in 1..4) { $categoryId = "Category$categoryNumber"; $categoryHotkeys[$categoryId] = Get-GaloreCategoryHotkey -CategoryId $categoryId }
+    return Set-GaloreHotkeyDefinitions -LauncherToggle (Get-GaloreLauncherToggleHotkey) -CategoryHotkeys $categoryHotkeys
 }
 
 # ==========================
