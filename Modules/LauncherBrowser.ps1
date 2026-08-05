@@ -28,11 +28,12 @@ function Set-GaloreBrowserProgram {
     if($null -eq $Programs -or -not $Programs.Contains("Browser") -or $null -eq $Browser) {
         return
     }
-    $Programs["Browser"]["Path"] = $Browser.Path
-    $Programs["Browser"]["StatusProcess"] = $Browser.ProcessName
-    $Programs["Browser"]["WindowProcess"] = $Browser.ProcessName
-    $Programs["Browser"]["BrowserId"] = $Browser.Id
-    $Programs["Browser"]["BrowserDisplayName"] = $Browser.DisplayName
+    $browserProgram = $Programs["Browser"]
+    $browserProgram.Path = $Browser.Path
+    $browserProgram.StatusProcess = $Browser.ProcessName
+    $browserProgram.WindowProcess = $Browser.ProcessName
+    $browserProgram.BrowserId = $Browser.Id
+    $browserProgram.BrowserDisplayName = $Browser.DisplayName
     $script:SelectedBrowserId = $Browser.Id
 }
 
@@ -41,9 +42,10 @@ function Initialize-GaloreBrowser {
     $browsers = Get-InstalledBrowsers
     if($browsers.Count -eq 0) {
         if($Programs -and $Programs.Contains("Browser")) {
-            $Programs["Browser"]["Path"] = $null
-            $Programs["Browser"]["BrowserId"] = $null
-            $Programs["Browser"]["BrowserDisplayName"] = "No browser detected"
+            $browserProgram = $Programs["Browser"]
+            $browserProgram.Path = $null
+            $browserProgram.BrowserId = $null
+            $browserProgram.BrowserDisplayName = "No browser detected"
         }
         $script:SelectedBrowserId = $null
         return

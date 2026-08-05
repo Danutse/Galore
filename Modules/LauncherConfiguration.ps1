@@ -442,7 +442,7 @@ function Test-LauncherConfigurationSchema {
                         "WindowProcess"
                     )
                 ) {
-                    if($program.Contains($processProperty) -and (-not ($program[$processProperty] -is [string]) -or [string]::IsNullOrWhiteSpace($program[$processProperty]))) {
+                    if($program.Contains($processProperty) -and (-not ($program.$processProperty -is [string]) -or [string]::IsNullOrWhiteSpace($program.$processProperty))) {
                         $null = $errors.Add("Program '$programName' $processProperty must be a non-empty string.")
                     }
                 }

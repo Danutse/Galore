@@ -159,7 +159,8 @@ function Invoke-ProgramTermination {
         if(-not $Programs.ContainsKey($name)) {
             continue
         }
-        $process = $Programs[$name]["StatusProcess"]
+        $program = $Programs[$name]
+        $process = $program.StatusProcess
         if([string]::IsNullOrWhiteSpace($process)) {
             continue
         }

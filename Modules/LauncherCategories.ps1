@@ -124,11 +124,12 @@ function Set-GaloreCategorySlot {
         $Slot.DisplayName = $displayName
         $Slot.Selected = $true
         $processName = [IO.Path]::GetFileNameWithoutExtension($dialog.FileName)
-        $Programs[$Slot.Id]["Path"] = $Slot.Path
-        $Programs[$Slot.Id]["Args"] = ""
-        $Programs[$Slot.Id]["StatusProcess"] = $processName
-        $Programs[$Slot.Id]["WindowProcess"] = $processName
-        $Programs[$Slot.Id]["DisplayName"] = $displayName
+        $program = $Programs[$Slot.Id]
+        $program.Path = $Slot.Path
+        $program.Args = ""
+        $program.StatusProcess = $processName
+        $program.WindowProcess = $processName
+        $program.DisplayName = $displayName
         $Checks[$Slot.Id].Checked = $true
         if(-not $Label.IsDisposed) { $Label.Text = $displayName }
         if(-not $Check.IsDisposed) { $Check.Checked = $true }
@@ -147,11 +148,12 @@ function Clear-GaloreCategorySlot {
         $Slot.DisplayName = "Empty"
         $Slot.Selected = $false
     }
-    $Programs[$Slot.Id]["Path"] = ""
-    $Programs[$Slot.Id]["Args"] = ""
-    $Programs[$Slot.Id]["StatusProcess"] = ""
-    $Programs[$Slot.Id]["WindowProcess"] = ""
-    $Programs[$Slot.Id]["DisplayName"] = "Empty"
+    $program = $Programs[$Slot.Id]
+    $program.Path = ""
+    $program.Args = ""
+    $program.StatusProcess = ""
+    $program.WindowProcess = ""
+    $program.DisplayName = "Empty"
     $Checks[$Slot.Id].Checked = $false
     if(-not $Label.IsDisposed) { $Label.Text = "Empty" }
     if(-not $Check.IsDisposed -and $Check.Checked) { $Check.Checked = $false }

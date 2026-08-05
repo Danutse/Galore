@@ -80,6 +80,8 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherHardware.ps1")
 
+. (Join-Path $moduleRoot "LauncherPrograms.ps1")
+
 
 
 Describe "Launcher settings validation" {
@@ -1334,6 +1336,58 @@ Describe "Category state contracts" {
 }
 
 Describe "Configuration discovery contracts" {
+
+    It "applies a saved executable override without replacing its program entry" {
+
+        $overridePath = Join-Path $TestDrive "Recorder.exe"
+
+        Set-Content -LiteralPath $overridePath -Value "fixture"
+
+        $programs = @{
+            Recorder = @{
+                Path = "C:\Old\Recorder.exe"
+                Args = "-silent"
+                StatusProcess = "OldRecorder"
+                WindowProcess = "OldRecorder"
+                DisplayName = "Old Recorder"
+            }
+        }
+
+        $originalProgram = $programs.Recorder
+
+        Mock Get-LauncherProgramOverrides {
+            @{
+                Recorder = [pscustomobject]@{
+                    Path = $overridePath
+                    DisplayName = "Recording"
+                }
+            }
+        }
+
+        Apply-GaloreProgramOverrides -Programs $programs
+
+        $programs.Contains("Recorder") |
+        Should Be $true
+
+        [object]::ReferenceEquals($originalProgram, $programs.Recorder) |
+        Should Be $true
+
+        $programs.Recorder.Path |
+        Should Be $overridePath
+
+        $programs.Recorder.Args |
+        Should Be ""
+
+        $programs.Recorder.StatusProcess |
+        Should Be "Recorder"
+
+        $programs.Recorder.WindowProcess |
+        Should Be "Recorder"
+
+        $programs.Recorder.DisplayName |
+        Should Be "Recording"
+
+    }
 
     It "returns the first existing candidate path" {
 

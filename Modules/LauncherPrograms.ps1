@@ -46,11 +46,12 @@ function Apply-GaloreProgramOverrides {
             continue
         }
         $processName = [System.IO.Path]::GetFileNameWithoutExtension([string]$override.Path)
-        $Programs[$programName]["Path"] = [string]$override.Path
-        $Programs[$programName]["Args"] = ""
-        $Programs[$programName]["StatusProcess"] = $processName
-        $Programs[$programName]["WindowProcess"] = $processName
-        $Programs[$programName]["DisplayName"] = [string]$override.DisplayName
+        $program = $Programs[$programName]
+        $program.Path = [string]$override.Path
+        $program.Args = ""
+        $program.StatusProcess = $processName
+        $program.WindowProcess = $processName
+        $program.DisplayName = [string]$override.DisplayName
     }
 }
 
@@ -81,7 +82,8 @@ function Show-GaloreProgramCustomization {
     $fileDialog.Title = "Choose the executable for $ProgramName"
     $fileDialog.Filter = "Applications (*.exe)|*.exe"
     $fileDialog.CheckFileExists = $true
-    $currentPath = [string]$Programs[$ProgramName]["Path"]
+    $program = $Programs[$ProgramName]
+    $currentPath = [string]$program.Path
     if(-not [string]::IsNullOrWhiteSpace($currentPath) -and (Test-Path -LiteralPath $currentPath -PathType Leaf)) {
         $fileDialog.InitialDirectory = [System.IO.Path]::GetDirectoryName($currentPath)
     }
@@ -98,11 +100,11 @@ function Show-GaloreProgramCustomization {
         }
         Save-LauncherProgramOverrides -ProgramOverrides $overrides
         $processName = [System.IO.Path]::GetFileNameWithoutExtension($fileDialog.FileName)
-        $Programs[$ProgramName]["Path"] = $fileDialog.FileName
-        $Programs[$ProgramName]["Args"] = ""
-        $Programs[$ProgramName]["StatusProcess"] = $processName
-        $Programs[$ProgramName]["WindowProcess"] = $processName
-        $Programs[$ProgramName]["DisplayName"] = $displayName
+        $program.Path = $fileDialog.FileName
+        $program.Args = ""
+        $program.StatusProcess = $processName
+        $program.WindowProcess = $processName
+        $program.DisplayName = $displayName
         $ProgramLabel.Text = $displayName
         $toolTip = New-Object System.Windows.Forms.ToolTip
         $toolTip.SetToolTip($ProgramLabel, $fileDialog.FileName)
@@ -164,6 +166,7 @@ function Build-ProgramGrid {
     $startY = 90
     $index = 0
     foreach($name in $Programs.Keys) {
+        $program = $Programs[$name]
         $column = $index % $totalColumns
         $row = [math]::Floor($index / $totalColumns)
         $startX = ($form.ClientSize.Width - $gridWidth) / 2
@@ -186,10 +189,10 @@ function Build-ProgramGrid {
         # ==========================
 
         $nameLabel = New-Object System.Windows.Forms.Label
-        $nameLabel.Text = if($name -eq "Browser" -and $Programs[$name].Contains("BrowserDisplayName")) {
-            "Browser: $($Programs[$name]["BrowserDisplayName"])"
-        } elseif($Programs[$name].Contains("DisplayName") -and -not [string]::IsNullOrWhiteSpace([string]$Programs[$name]["DisplayName"])) {
-            [string]$Programs[$name]["DisplayName"]
+        $nameLabel.Text = if($name -eq "Browser" -and $program.Contains("BrowserDisplayName")) {
+            "Browser: $($program.BrowserDisplayName)"
+        } elseif($program.Contains("DisplayName") -and -not [string]::IsNullOrWhiteSpace([string]$program.DisplayName)) {
+            [string]$program.DisplayName
         } else {
             $name
         }
@@ -321,7 +324,8 @@ function Update-ProgramStatus {
         if(-not $Statuses.ContainsKey($name)) {
             continue
         }
-        $process = $Programs[$name]["StatusProcess"]
+        $program = $Programs[$name]
+        $process = $program.StatusProcess
         $isRunning = [bool](Get-ProgramStatus $process)
         Update-GaloreApplicationMaintenanceState -ApplicationName $name -IsRunning $isRunning
         if($isRunning) {
