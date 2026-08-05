@@ -891,4 +891,25 @@ Describe "Hotkey settings persistence" {
 
     }
 
+    It "formats a captured Ctrl+T shortcut for immediate display" {
+
+        $event = [pscustomobject]@{
+            Control = $true
+            Alt = $false
+            Shift = $false
+            KeyCode = [System.Windows.Forms.Keys]::T
+        }
+
+        $hotkey =
+        ConvertFrom-GaloreHotkeyKeyEvent `
+        -Event $event
+
+        $hotkey.DisplayText |
+        Should Be "Ctrl+T"
+
+        $hotkey.ModifierMask |
+        Should Be 2
+
+    }
+
 }
