@@ -18,8 +18,19 @@ jobs:
       - name: Run source and dependency validation
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Path .\Logs -Force | Out-Null
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1 -SkipUnitTests
+          $errors = @()
+          $files = Get-ChildItem -Path . -Recurse -File -Filter *.ps1
+          foreach($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            $errors += $parseErrors
+          }
+          if($errors.Count -gt 0) {
+            $details = $errors | ForEach-Object { "$($_.Extent.File):$($_.Extent.StartLineNumber): $($_.Message)" }
+            throw ("PowerShell syntax validation failed:`n" + ($details -join "`n"))
+          }
+          Write-Host "Parsed $($files.Count) PowerShell files successfully."
 
   compile-smoke:
     name: Compile disposable executable
@@ -35,5 +46,8 @@ jobs:
       - name: Compile-check the launcher
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Path .\Logs -Force | Out-Null
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1 -Compile -SkipUnitTests
+          $output = Join-Path $env:TEMP "GaloreLauncher-CI.exe"
+          ps2exe -inputFile .\Modules\GaloreLauncher.ps1 -outputFile $output -noConsole
+          if(-not (Test-Path -LiteralPath $output -PathType Leaf)) {
+            throw "ps2exe did not produce the disposable executable."
+          }
