@@ -1,45 +1,45 @@
 # Galore Launcher
 
-Galore Launcher is a Windows desktop control center for starting programs, tracking running applications, organizing quick-access items, managing small desktop tools, and keeping a personalized launcher layout.
+Galore Launcher is a control center for Windows. You can use it to start programs, see what's running, organize things you access often, manage small desktop tools, and set up your own launcher layout.
 
-## Highlights
+## What it does
 
-- Launch or end the programs you configure.
-- Choose whether actions apply to selected programs or every configured program at once.
-- Change any managed executable from its right-click menu.
-- Create four program categories, each containing up to five programs.
-- Search files and installed applications from the built-in search window.
-- Monitor CPU, RAM, GPU, and GPU-temperature information.
-- Keep quick-access icons for files, folders, shortcuts, and web shortcuts.
-- Mirror ordinary Windows application windows in the left-side taskbar.
-- Use network retry, volume, keyboard-language, calculator, and post-it tools.
-- Automatically save window placement, program choices, categories, post-its, and quick-access layout.
+- Start or stop programs you set up.
+- Decide if actions apply to just one program or all of them.
+- Change any program settings by right-clicking it.
+- Make four categories for programs, with up to five programs in each.
+- Search for files and installed apps in a search window.
+- Check CPU, RAM, GPU, and GPU temperature.
+- Keep icons for quick access to files, folders, shortcuts, and websites.
+- Show regular Windows app windows on the left side of the taskbar.
+- Use tools for network retries, volume, keyboard language, a calculator, and sticky notes.
+- It automatically saves where your windows are, which programs you chose, your categories, sticky notes, and quick-access layout.
 
-## Installation
+## How to install
 
-1. Download `GaloreLauncherSetup.exe` from the latest GitHub release.
+1. Get `GaloreLauncherSetup.exe` from the latest release on GitHub.
 2. Run the installer.
-3. Choose the folder where you want Galore installed.
-4. Open `GaloreLauncher.exe` from the installation folder.
+3. Pick where you want to install Galore.
+4. Open `GaloreLauncher.exe` from the folder where you installed it.
 
-The installed release creates its `Settings`, `Logs`, and program-data folders as needed. No PowerShell modules folder is required beside the installed executable.
+When you install it, it will create folders for settings, logs, and program data if they don't exist. You don't need any PowerShell modules next to the main program file.
 
-## First-time setup
+## Getting started
 
-1. Right-click a program name to choose the executable it should manage.
-2. Left-click a program name or checkbox to include or exclude it from selected actions.
-3. Use **Launch All**, **Terminate All**, **Launch Selected**, or **Terminate Selected**.
-4. Right-click a category button to configure up to five programs.
-5. Drag a supported file, folder, `.lnk` shortcut, or `.url` shortcut onto the quick-access bar.
+1. Right-click a program name to choose the actual file to manage.
+2. Left-click a program name or its checkbox to include or exclude it from certain actions.
+3. Use the **Launch All**, **Terminate All**, **Launch Selected**, or **Terminate Selected** buttons.
+4. Right-click a category button to add up to five programs to it.
+5. Drag a file, folder or shortcut onto the quick-access bar.
 
-## Support
+## Help
 
-If something does not work as expected, check the `Logs` folder first. When reporting an issue, include the relevant log entries, your Windows version, and the steps that caused it.
+If something isn't working right, look in the `Logs` folder first. When you report a problem, please include the relevant log entries, your Windows version, and how you caused the issue.
 
-## Shortcuts
+## Keyboard Shortcuts
 
-See [SHORTCUTS.txt](SHORTCUTS.txt) for the available keyboard shortcuts.
+You can find the available keyboard shortcuts in [SHORTCUTS.txt](SHORTCUTS.txt).
 
 ## License
 
-Galore Launcher is released under the [MIT License](LICENSE).
+Galore Launcher is available under the [MIT License](LICENSE).
