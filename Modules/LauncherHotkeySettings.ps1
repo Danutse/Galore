@@ -54,41 +54,42 @@ function ConvertFrom-GaloreHotkeyKeyEvent {
 }
 
 function Save-GalorePendingHotkeys {
-    param($StatusLabel)
-    if($script:GalorePendingHotkeys.Count -eq 0) { return $true }
+    param($StatusLabel, $CaptureState)
+    if($null -eq $CaptureState -or $CaptureState.Pending.Count -eq 0) { return $true }
     $launcherToggle = Get-GaloreLauncherToggleHotkey
     $categoryHotkeys = [ordered]@{}
     foreach($number in 1..4) { $categoryId = "Category$number"; $categoryHotkeys[$categoryId] = Get-GaloreCategoryHotkey -CategoryId $categoryId }
-    if($script:GalorePendingHotkeys.ContainsKey("LauncherToggle")) { $launcherToggle = $script:GalorePendingHotkeys["LauncherToggle"] }
-    foreach($number in 1..4) { $categoryId = "Category$number"; if($script:GalorePendingHotkeys.ContainsKey($categoryId)) { $categoryHotkeys[$categoryId] = $script:GalorePendingHotkeys[$categoryId] } }
+    if($CaptureState.Pending.ContainsKey("LauncherToggle")) { $launcherToggle = $CaptureState.Pending["LauncherToggle"] }
+    foreach($number in 1..4) { $categoryId = "Category$number"; if($CaptureState.Pending.ContainsKey($categoryId)) { $categoryHotkeys[$categoryId] = $CaptureState.Pending[$categoryId] } }
     if(-not (Set-GaloreHotkeyDefinitions -LauncherToggle $launcherToggle -CategoryHotkeys $categoryHotkeys)) {
         $StatusLabel.Text = "The selected set conflicts with Windows or another application."
         $StatusLabel.ForeColor = [System.Drawing.Color]::Salmon
         return $false
     }
-    $script:GalorePendingHotkeys = @{}
+    $CaptureState.Pending.Clear()
     return $true
 }
 
 function Invoke-GaloreHotkeyCaptureInput {
-    param($Event, $StatusLabel)
-    $field = $script:GaloreHotkeyCaptureField
+    param($Event, $StatusLabel, $CaptureState)
+    if($null -eq $CaptureState) { return }
+    $field = $CaptureState.Field
     if($null -eq $field -or $field.IsDisposed) { return }
     if($Event.KeyCode -eq [System.Windows.Forms.Keys]::Escape) {
         $field.Text = if($field.Tag -eq "LauncherToggle") { (Get-GaloreLauncherToggleHotkey).DisplayText } else { (Get-GaloreCategoryHotkey -CategoryId $field.Tag).DisplayText }
-        $script:GalorePendingHotkeys.Remove($field.Tag)
-        $script:GaloreHotkeyCaptureField = $null
+        $CaptureState.Pending.Remove($field.Tag)
+        $CaptureState.Field = $null
         Resume-GaloreHotkeys | Out-Null
         $StatusLabel.Text = "Shortcut capture cancelled."
         $StatusLabel.ForeColor = [System.Drawing.Color]::Gainsboro
     }
     elseif($Event.KeyCode -eq [System.Windows.Forms.Keys]::Back) {
-        if(-not $script:GalorePendingHotkeys.ContainsKey($field.Tag)) {
+        if(-not $CaptureState.Pending.ContainsKey($field.Tag)) {
             $StatusLabel.Text = "Press a shortcut combination first."
             $StatusLabel.ForeColor = [System.Drawing.Color]::Gold
         }
-        elseif(Save-GalorePendingHotkeys -StatusLabel $StatusLabel) {
-            $script:GaloreHotkeyCaptureField = $null
+        elseif(Save-GalorePendingHotkeys -StatusLabel $StatusLabel -CaptureState $CaptureState) {
+            $CaptureState.Field = $null
             $StatusLabel.Text = "Shortcut applied and saved."
             $StatusLabel.ForeColor = [System.Drawing.Color]::LightGreen
         }
@@ -96,7 +97,7 @@ function Invoke-GaloreHotkeyCaptureInput {
     else {
         $candidate = ConvertFrom-GaloreHotkeyKeyEvent -Event $Event
         if($candidate) {
-            $script:GalorePendingHotkeys[$field.Tag] = $candidate
+            $CaptureState.Pending[$field.Tag] = $candidate
             $field.Text = $candidate.DisplayText
             $StatusLabel.Text = "Press Backspace to apply '$($candidate.DisplayText)'."
             $StatusLabel.ForeColor = [System.Drawing.Color]::Gold
@@ -132,8 +133,8 @@ function Show-GaloreHotkeySettingsPopup {
     $hint.ForeColor = [System.Drawing.Color]::Gainsboro
     $hint.BackColor = [System.Drawing.Color]::Transparent
     $popup.Controls.Add($hint)
-    $script:GalorePendingHotkeys = @{}
-    $script:GaloreHotkeyCaptureField = $null
+    $captureState = [pscustomobject]@{ Field = $null; Pending = @{} }
+    $popup | Add-Member -MemberType NoteProperty -Name HotkeyCaptureState -Value $captureState -Force
     $captureStatus = New-Object System.Windows.Forms.Label
     $captureStatus.Bounds = [System.Drawing.Rectangle]::new(28, $popup.ClientSize.Height - 84, $popup.ClientSize.Width - 56, 20)
     $captureStatus.Text = "Select a shortcut field to change it."
@@ -171,14 +172,14 @@ function Show-GaloreHotkeySettingsPopup {
         $capture.Tag = $row.Id
         $capture.Add_Click({
             param($sender, $event)
-            $previousField = $script:GaloreHotkeyCaptureField
+            $previousField = $captureState.Field
             if($previousField -and $previousField -ne $sender -and -not $previousField.IsDisposed) {
-                if($script:GalorePendingHotkeys.ContainsKey($previousField.Tag)) {
+                if($captureState.Pending.ContainsKey($previousField.Tag)) {
                     $previousField.Text = if($previousField.Tag -eq "LauncherToggle") { (Get-GaloreLauncherToggleHotkey).DisplayText } else { (Get-GaloreCategoryHotkey -CategoryId $previousField.Tag).DisplayText }
-                    $script:GalorePendingHotkeys.Remove($previousField.Tag)
+                    $captureState.Pending.Remove($previousField.Tag)
                 }
             }
-            $script:GaloreHotkeyCaptureField = $sender
+            $captureState.Field = $sender
             Suspend-GaloreHotkeys
             $captureStatus.Text = "Listening. Press your shortcut, then press Backspace to apply it."
             $captureStatus.ForeColor = [System.Drawing.Color]::Gold
@@ -187,8 +188,8 @@ function Show-GaloreHotkeySettingsPopup {
         $capture.Add_PreviewKeyDown({ param($sender, $event) $event.IsInputKey = $true })
         $capture.Add_KeyDown({
             param($sender, $event)
-            if($script:GaloreHotkeyCaptureField -eq $sender) {
-                Invoke-GaloreHotkeyCaptureInput -Event $event -StatusLabel $captureStatus
+            if($captureState.Field -eq $sender) {
+                Invoke-GaloreHotkeyCaptureInput -Event $event -StatusLabel $captureStatus -CaptureState $captureState
             }
         }.GetNewClosure())
         $hotkeyFields[$row.Id] = $capture
@@ -206,12 +207,13 @@ function Show-GaloreHotkeySettingsPopup {
     $resetButton.UseVisualStyleBackColor = $false
     $popup.Controls.Add($resetButton)
     $resetButton.Add_Click({
-        $script:GalorePendingHotkeys["LauncherToggle"] = [pscustomobject]@{ ModifierMask = 6; VirtualKey = 32; DisplayText = "Ctrl+Shift+Space" }
-        foreach($number in 1..4) { $categoryId = "Category$number"; $script:GalorePendingHotkeys[$categoryId] = [pscustomobject]@{ ModifierMask = 2; VirtualKey = (0x70 + ($number - 1)); DisplayText = "Ctrl+F$number" } }
-        if(Save-GalorePendingHotkeys -StatusLabel $captureStatus) {
+        $captureState.Pending.Clear()
+        $captureState.Pending["LauncherToggle"] = [pscustomobject]@{ ModifierMask = 6; VirtualKey = 32; DisplayText = "Ctrl+Shift+Space" }
+        foreach($number in 1..4) { $categoryId = "Category$number"; $captureState.Pending[$categoryId] = [pscustomobject]@{ ModifierMask = 2; VirtualKey = (0x70 + ($number - 1)); DisplayText = "Ctrl+F$number" } }
+        if(Save-GalorePendingHotkeys -StatusLabel $captureStatus -CaptureState $captureState) {
             foreach($number in 1..4) { $categoryId = "Category$number"; $hotkeyFields[$categoryId].Text = (Get-GaloreCategoryHotkey -CategoryId $categoryId).DisplayText }
             $hotkeyFields["LauncherToggle"].Text = (Get-GaloreLauncherToggleHotkey).DisplayText
-            $script:GaloreHotkeyCaptureField = $null
+            $captureState.Field = $null
             $captureStatus.Text = "Default shortcuts applied."
             $captureStatus.ForeColor = [System.Drawing.Color]::LightGreen
         }
@@ -229,7 +231,15 @@ function Show-GaloreHotkeySettingsPopup {
     $closeButton.Add_Click({
         $popup.Close()
     }.GetNewClosure())
-    $popup.Add_FormClosed({ Resume-GaloreHotkeys | Out-Null; $script:GalorePendingHotkeys = @{}; $script:GaloreHotkeyCaptureField = $null; $script:GaloreHotkeySettingsPopup = $null })
+    $popup.Add_FormClosed({
+        param($sender, $event)
+        Resume-GaloreHotkeys | Out-Null
+        if($sender.HotkeyCaptureState) {
+            $sender.HotkeyCaptureState.Pending.Clear()
+            $sender.HotkeyCaptureState.Field = $null
+        }
+        $script:GaloreHotkeySettingsPopup = $null
+    })
     $script:GaloreHotkeySettingsPopup = $popup
     Show-GaloreSystemToolPopup -Popup $popup -Owner $Anchor.FindForm()
 }

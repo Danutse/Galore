@@ -912,4 +912,83 @@ Describe "Hotkey settings persistence" {
 
     }
 
+    It "keeps capture and apply state shared across hotkey events" {
+
+        Initialize-GaloreHotkeySettings
+
+        Mock Set-GaloreHotkeyDefinitions { return $true }
+
+        $field =
+        [pscustomobject]@{
+            Tag = "LauncherToggle"
+            Text = "Ctrl+Shift+Space"
+            IsDisposed = $false
+        }
+
+        $captureState =
+        [pscustomobject]@{
+            Field = $field
+            Pending = @{}
+        }
+
+        $status =
+        [pscustomobject]@{
+            Text = ""
+            ForeColor = $null
+        }
+
+        $captureEvent =
+        [pscustomobject]@{
+            Control = $true
+            Alt = $false
+            Shift = $false
+            KeyCode = [System.Windows.Forms.Keys]::T
+            SuppressKeyPress = $false
+            Handled = $false
+        }
+
+        Invoke-GaloreHotkeyCaptureInput `
+        -Event $captureEvent `
+        -StatusLabel $status `
+        -CaptureState $captureState
+
+        $field.Text |
+        Should Be "Ctrl+T"
+
+        $captureState.Pending["LauncherToggle"].DisplayText |
+        Should Be "Ctrl+T"
+
+        $applyEvent =
+        [pscustomobject]@{
+            Control = $false
+            Alt = $false
+            Shift = $false
+            KeyCode = [System.Windows.Forms.Keys]::Back
+            SuppressKeyPress = $false
+            Handled = $false
+        }
+
+        Invoke-GaloreHotkeyCaptureInput `
+        -Event $applyEvent `
+        -StatusLabel $status `
+        -CaptureState $captureState
+
+        $captureState.Field |
+        Should BeNullOrEmpty
+
+        $captureState.Pending.Count |
+        Should Be 0
+
+        $status.Text |
+        Should Be "Shortcut applied and saved."
+
+        Assert-MockCalled Set-GaloreHotkeyDefinitions `
+        -Times 1 `
+        -Exactly `
+        -ParameterFilter {
+            $LauncherToggle.DisplayText -eq "Ctrl+T"
+        }
+
+    }
+
 }
