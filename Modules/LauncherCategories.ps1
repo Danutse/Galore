@@ -5,14 +5,18 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherCategories"
     LoadOrder = 260
-    RequiresModules = @("LauncherAlphaOverlay", "LauncherLogging", "LauncherSettings", "LauncherPrograms")
+    RequiresModules = @("LauncherDomain", "LauncherAlphaOverlay", "LauncherLogging", "LauncherSettings", "LauncherPrograms")
     RequiresFunctions = [ordered]@{
         "Get-LauncherSettingsFolder" = "LauncherSettings"
         "Write-LauncherDiagnostic" = "LauncherLogging"
         "Show-GaloreProgramNameDialog" = "LauncherPrograms"
         "Set-GaloreTransparentWindowRegion" = "LauncherAlphaOverlay"
     }
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreCategorySlot" = "LauncherDomain"
+        "GaloreCategory" = "LauncherDomain"
+        "GaloreCategoryState" = "LauncherDomain"
+    }
     RequiresVariables = @("AppRoot")
     RequiresFolders = @("resources")
     RequiresFiles = @()
@@ -30,10 +34,14 @@ function New-GaloreCategoryState {
     $categories = @()
     for($categoryIndex = 1; $categoryIndex -le 4; $categoryIndex++) {
         $slots = @()
-        for($slotIndex = 1; $slotIndex -le 5; $slotIndex++) { $slots += [pscustomobject]@{ Id = "Category$categoryIndex`Slot$slotIndex"; Path = ""; DisplayName = "Empty"; Selected = $false } }
-        $categories += [pscustomobject]@{ Id = "Category$categoryIndex"; Name = "Category $categoryIndex"; Slots = $slots }
+        for($slotIndex = 1; $slotIndex -le 5; $slotIndex++) {
+            $slots += [GaloreCategorySlot]::new("Category$categoryIndex`Slot$slotIndex")
+        }
+        $categories += [GaloreCategory]::new("Category$categoryIndex", "Category $categoryIndex", [GaloreCategorySlot[]]$slots)
     }
-    [pscustomobject]@{ Version = 1; Categories = $categories }
+    $state = [GaloreCategoryState]::new()
+    $state.Categories = [GaloreCategory[]]$categories
+    return $state
 }
 
 function Save-GaloreCategoryState {
@@ -53,14 +61,14 @@ function Initialize-GaloreCategoryState {
     if(Test-Path -LiteralPath $script:GaloreCategoryFile -PathType Leaf) {
         try {
             $saved = Get-Content -LiteralPath $script:GaloreCategoryFile -Raw | ConvertFrom-Json
-            if($saved.Version -ne 1 -or @($saved.Categories).Count -ne 4) { throw "Invalid category data." }
+            if(($saved.Version -isnot [int] -and $saved.Version -isnot [long]) -or [long]$saved.Version -ne 1 -or @($saved.Categories).Count -ne 4) { throw "Invalid category data." }
             for($categoryIndex = 0; $categoryIndex -lt 4; $categoryIndex++) {
                 $savedCategory = @($saved.Categories)[$categoryIndex]
-                if($null -eq $savedCategory -or [string]::IsNullOrWhiteSpace([string]$savedCategory.Name) -or @($savedCategory.Slots).Count -ne 5) { throw "Invalid category data." }
+                if($null -eq $savedCategory -or $savedCategory.Name -isnot [string] -or [string]::IsNullOrWhiteSpace($savedCategory.Name) -or @($savedCategory.Slots).Count -ne 5) { throw "Invalid category data." }
                 $state.Categories[$categoryIndex].Name = [string]$savedCategory.Name
                 for($slotIndex = 0; $slotIndex -lt 5; $slotIndex++) {
                     $savedSlot = @($savedCategory.Slots)[$slotIndex]
-                    if($null -eq $savedSlot -or $savedSlot.Path -isnot [string] -or $savedSlot.DisplayName -isnot [string]) { throw "Invalid category slot data." }
+                    if($null -eq $savedSlot -or $savedSlot.Path -isnot [string] -or $savedSlot.DisplayName -isnot [string] -or $null -eq $savedSlot.PSObject.Properties["Selected"] -or $savedSlot.Selected -isnot [bool]) { throw "Invalid category slot data." }
                     $slot = $state.Categories[$categoryIndex].Slots[$slotIndex]
                     $slot.Path = [string]$savedSlot.Path
                     $slot.DisplayName = if([string]::IsNullOrWhiteSpace([string]$savedSlot.DisplayName)) { "Empty" } else { [string]$savedSlot.DisplayName }
@@ -74,7 +82,13 @@ function Initialize-GaloreCategoryState {
     $state
 }
 
-function Test-GaloreCategorySlotConfigured { param($Slot) -not [string]::IsNullOrWhiteSpace([string]$Slot.Path) }
+function Test-GaloreCategorySlotConfigured {
+    param($Slot)
+    if($Slot -is [GaloreCategorySlot]) {
+        return $Slot.IsConfigured()
+    }
+    return $null -ne $Slot -and -not [string]::IsNullOrWhiteSpace([string]$Slot.Path)
+}
 
 function Update-GaloreCategoryMaster {
     param($Category, [System.Windows.Forms.CheckBox]$Master)
@@ -126,9 +140,13 @@ function Set-GaloreCategorySlot {
 
 function Clear-GaloreCategorySlot {
     param($Slot, $Category, [System.Windows.Forms.CheckBox]$Master, [System.Windows.Forms.Label]$Label, [System.Windows.Forms.CheckBox]$Check, $Programs, $Checks)
-    $Slot.Path = ""
-    $Slot.DisplayName = "Empty"
-    $Slot.Selected = $false
+    if($Slot -is [GaloreCategorySlot]) {
+        $Slot.Clear()
+    } else {
+        $Slot.Path = ""
+        $Slot.DisplayName = "Empty"
+        $Slot.Selected = $false
+    }
     $Programs[$Slot.Id]["Path"] = ""
     $Programs[$Slot.Id]["Args"] = ""
     $Programs[$Slot.Id]["StatusProcess"] = ""

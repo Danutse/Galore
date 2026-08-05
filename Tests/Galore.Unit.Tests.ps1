@@ -1057,6 +1057,9 @@ Describe "Category state contracts" {
 
         $state = New-GaloreCategoryState
 
+        $state.GetType().Name |
+        Should Be "GaloreCategoryState"
+
         @($state.Categories).Count |
         Should Be 4
 
@@ -1064,6 +1067,9 @@ Describe "Category state contracts" {
 
         $slots.Count |
         Should Be 20
+
+        @($slots | Where-Object { $_ -isnot [GaloreCategorySlot] }).Count |
+        Should Be 0
 
         @($slots.Id | Select-Object -Unique).Count |
         Should Be 20
@@ -1122,7 +1128,7 @@ Describe "Category state contracts" {
         $state.Categories[0].Name |
         Should Be "Category 1"
 
-        Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly
+        Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly -Scope It
 
     }
 
@@ -1133,6 +1139,191 @@ Describe "Category state contracts" {
 
         Test-GaloreCategorySlotConfigured ([pscustomobject]@{ Path = "   " }) |
         Should Be $false
+
+    }
+
+    It "rejects a non-boolean saved slot selection and restores defaults" {
+
+        $state = New-GaloreCategoryState
+
+        $state.Categories[0].Slots[0].Selected = $true
+
+        $saved = $state | ConvertTo-Json -Depth 6 | ConvertFrom-Json
+
+        $saved.Categories[0].Slots[0].Selected = "yes"
+
+        $saved |
+        ConvertTo-Json -Depth 6 |
+        Set-Content -LiteralPath (Join-Path $script:GaloreCategoryTestSettingsFolder "categories.json") -Encoding UTF8
+
+        $restored = Initialize-GaloreCategoryState
+
+        $restored.Categories[0].Slots[0].Selected |
+        Should Be $false
+
+        Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly -Scope It
+
+    }
+
+    It "rejects a string category schema version instead of coercing it" {
+
+        $saved = New-GaloreCategoryState | ConvertTo-Json -Depth 6 | ConvertFrom-Json
+
+        $saved.Version = "1"
+
+        $saved |
+        ConvertTo-Json -Depth 6 |
+        Set-Content -LiteralPath (Join-Path $script:GaloreCategoryTestSettingsFolder "categories.json") -Encoding UTF8
+
+        $restored = Initialize-GaloreCategoryState
+
+        $restored.Categories[0].Name |
+        Should Be "Category 1"
+
+        Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly -Scope It
+
+    }
+
+    It "rejects a non-string category name instead of coercing it" {
+
+        $saved = New-GaloreCategoryState | ConvertTo-Json -Depth 6 | ConvertFrom-Json
+
+        $saved.Categories[0].Name = 42
+
+        $saved |
+        ConvertTo-Json -Depth 6 |
+        Set-Content -LiteralPath (Join-Path $script:GaloreCategoryTestSettingsFolder "categories.json") -Encoding UTF8
+
+        $restored = Initialize-GaloreCategoryState
+
+        $restored.Categories[0].Name |
+        Should Be "Category 1"
+
+        Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly -Scope It
+
+    }
+
+    It "calculates unchecked, partial, and fully checked master category state" {
+
+        $category = (New-GaloreCategoryState).Categories[0]
+
+        $master = New-Object System.Windows.Forms.CheckBox
+
+        try {
+
+            $category.Slots[0].Path = "C:\Apps\One.exe"
+
+            $category.Slots[1].Path = "C:\Apps\Two.exe"
+
+            Update-GaloreCategoryMaster -Category $category -Master $master
+
+            $master.CheckState |
+            Should Be ([System.Windows.Forms.CheckState]::Unchecked)
+
+            $category.Slots[0].Selected = $true
+
+            Update-GaloreCategoryMaster -Category $category -Master $master
+
+            $master.CheckState |
+            Should Be ([System.Windows.Forms.CheckState]::Indeterminate)
+
+            $category.Slots[1].Selected = $true
+
+            Update-GaloreCategoryMaster -Category $category -Master $master
+
+            $master.CheckState |
+            Should Be ([System.Windows.Forms.CheckState]::Checked)
+
+        } finally {
+
+            $master.Dispose()
+
+        }
+
+    }
+
+    It "clears typed slot state and its existing view and program projections" {
+
+        $category = (New-GaloreCategoryState).Categories[0]
+
+        $slot = $category.Slots[0]
+
+        $slot.Path = "C:\Apps\One.exe"
+
+        $slot.DisplayName = "One"
+
+        $slot.Selected = $true
+
+        $master = New-Object System.Windows.Forms.CheckBox
+
+        $label = New-Object System.Windows.Forms.Label
+
+        $label.Text = "One"
+
+        $check = New-Object System.Windows.Forms.CheckBox
+
+        $check.Checked = $true
+
+        $programs = @{
+            $slot.Id = @{
+                Path = $slot.Path
+                Args = "--test"
+                StatusProcess = "One"
+                WindowProcess = "One"
+                DisplayName = "One"
+            }
+        }
+
+        $checks = @{
+            $slot.Id = [pscustomobject]@{ Checked = $true }
+        }
+
+        try {
+
+            Clear-GaloreCategorySlot -Slot $slot -Category $category -Master $master -Label $label -Check $check -Programs $programs -Checks $checks
+
+            $slot.IsConfigured() |
+            Should Be $false
+
+            $slot.DisplayName |
+            Should Be "Empty"
+
+            $slot.Selected |
+            Should Be $false
+
+            $programs[$slot.Id].Path |
+            Should Be ""
+
+            $programs[$slot.Id].DisplayName |
+            Should Be "Empty"
+
+            $programs[$slot.Id].Args |
+            Should Be ""
+
+            $programs[$slot.Id].StatusProcess |
+            Should Be ""
+
+            $programs[$slot.Id].WindowProcess |
+            Should Be ""
+
+            $checks[$slot.Id].Checked |
+            Should Be $false
+
+            $label.Text |
+            Should Be "Empty"
+
+            $check.Checked |
+            Should Be $false
+
+        } finally {
+
+            $master.Dispose()
+
+            $label.Dispose()
+
+            $check.Dispose()
+
+        }
 
     }
 
