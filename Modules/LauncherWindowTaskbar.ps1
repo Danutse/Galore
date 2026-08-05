@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherWindowTaskbar"
-    LoadOrder = 240
+    LoadOrder = 250
     RequiresModules = @("LauncherAlphaOverlay", "LauncherLogging")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"

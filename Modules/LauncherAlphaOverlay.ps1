@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherAlphaOverlay"
-    LoadOrder = 220
+    LoadOrder = 230
     RequiresModules = @("LauncherLogging")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"

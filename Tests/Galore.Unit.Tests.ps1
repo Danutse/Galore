@@ -42,6 +42,10 @@ $GaloreRoot
 
 
 
+. (Join-Path $moduleRoot "LauncherDomain.ps1")
+
+
+
 . (Join-Path $moduleRoot "LauncherLogging.ps1")
 
 . (Join-Path $moduleRoot "LauncherSettings.ps1")
@@ -1305,6 +1309,133 @@ Describe "Maintenance state contracts" {
 
         Test-GaloreMaintenanceIsDue -State $state |
         Should Be $true
+
+    }
+
+}
+
+Describe "Domain model contracts" {
+
+    It "keeps program definitions safe when unconfigured and derives process identity when configured" {
+
+        $program = [GaloreProgramDefinition]::new()
+
+        $program.IsConfigured() |
+        Should Be $false
+
+        $program.ApplyExecutable("C:\Apps\Recorder.exe", "Recorder")
+
+        $program.IsConfigured() |
+        Should Be $true
+
+        $program.StatusProcess |
+        Should Be "Recorder"
+
+        $program.WindowProcess |
+        Should Be "Recorder"
+
+        $program.Clear()
+
+        $program.IsConfigured() |
+        Should Be $false
+
+    }
+
+    It "keeps category slot defaults and reset behavior compatible with persisted state" {
+
+        $slot = [GaloreCategorySlot]::new("Category1Slot1")
+
+        $slot.DisplayName |
+        Should Be "Empty"
+
+        $slot.Selected |
+        Should Be $false
+
+        $slot.Path = "C:\Apps\Tool.exe"
+
+        $slot.DisplayName = "Tool"
+
+        $slot.Selected = $true
+
+        $slot.Clear()
+
+        $slot.Path |
+        Should Be ""
+
+        $slot.DisplayName |
+        Should Be "Empty"
+
+        $slot.Selected |
+        Should Be $false
+
+    }
+
+    It "serializes category domain objects without PowerShell type metadata" {
+
+        $state = [GaloreCategoryState]::new()
+
+        $slot = [GaloreCategorySlot]::new("Category1Slot1")
+
+        $category = [GaloreCategory]::new("Category1", "Category 1", @($slot))
+
+        $state.Categories = @($category)
+
+        $json = $state | ConvertTo-Json -Depth 5
+
+        $saved = $json | ConvertFrom-Json
+
+        $saved.Version |
+        Should Be 1
+
+        $saved.Categories[0].Slots[0].Id |
+        Should Be "Category1Slot1"
+
+        $json |
+        Should Not Match "GaloreCategory"
+
+    }
+
+    It "provides stable launcher setting defaults" {
+
+        $settings = [GaloreLauncherSettings]::new()
+
+        $settings.Width |
+        Should Be 1100
+
+        $settings.Height |
+        Should Be 550
+
+        @($settings.Selected).Count |
+        Should Be 0
+
+        $settings.ProgramOverrides.Count |
+        Should Be 0
+
+        $json = $settings | ConvertTo-Json -Depth 4
+
+        $json |
+        Should Match '"Width"'
+
+        $json |
+        Should Not Match '"WindowPlacement"'
+
+    }
+
+    It "preserves the hardware property names consumed by the current UI" {
+
+        $snapshot = [GaloreHardwareSnapshot]::new(12, 34, 56, 78)
+
+        $snapshot.CPU |
+        Should Be 12
+
+        $snapshot.RAM |
+        Should Be 34
+
+        $snapshot.GPU |
+        Should Be 56
+
+        $snapshot.GPUTemp |
+        Should Be 78
 
     }
 

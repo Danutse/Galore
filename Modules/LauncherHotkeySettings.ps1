@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherHotkeySettings"
-    LoadOrder = 260
+    LoadOrder = 270
     RequiresModules = @("LauncherAlphaOverlay", "LauncherHotkeys", "LauncherLogging", "LauncherSystemTools", "UI")
     RequiresFunctions = [ordered]@{
         "Get-GaloreLauncherToggleHotkey" = "LauncherHotkeys"

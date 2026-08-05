@@ -5,7 +5,7 @@
 param([ValidateSet("", "Due", "All", "Quick", "Weekly", "Monthly", "SixtyDay", "ClosedApplicationCaches")] [string]$GaloreMaintenanceWorkerMode = "", [string]$GaloreMaintenanceStateFile = "")
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherMaintenance"
-    LoadOrder = 120
+    LoadOrder = 130
     RequiresModules = @()
     RequiresFunctions = [ordered]@{}
     RequiresTypes = [ordered]@{}

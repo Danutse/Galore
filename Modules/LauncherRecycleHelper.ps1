@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherRecycleHelper"
-    LoadOrder = 90
+    LoadOrder = 100
     RequiresModules = @()
     RequiresFunctions = [ordered]@{}
     RequiresTypes = [ordered]@{}

@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherCategories"
-    LoadOrder = 250
+    LoadOrder = 260
     RequiresModules = @("LauncherAlphaOverlay", "LauncherLogging", "LauncherSettings", "LauncherPrograms")
     RequiresFunctions = [ordered]@{
         "Get-LauncherSettingsFolder" = "LauncherSettings"

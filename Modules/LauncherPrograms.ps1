@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherPrograms"
-    LoadOrder = 100
+    LoadOrder = 110
     RequiresModules = @("LauncherBrowser", "LauncherDesktop", "LauncherEvents", "LauncherLogging", "LauncherMaintenance", "LauncherProcess", "LauncherSettings", "LauncherStartup", "UI")
     RequiresFunctions = [ordered]@{
         "New-StartupToggle" = "LauncherDesktop"

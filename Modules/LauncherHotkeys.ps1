@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherHotkeys"
-    LoadOrder = 70
+    LoadOrder = 80
     RequiresModules = @("LauncherAction", "LauncherCategories", "LauncherLogging", "LauncherSettings", "LauncherStartMenu", "UI")
     RequiresFunctions = [ordered]@{
         "Close-StartSearchWindowAnimated" = "LauncherStartMenu"

@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherStartup"
-    LoadOrder = 30
+    LoadOrder = 40
     RequiresModules = @()
     RequiresFunctions = [ordered]@{}
     RequiresTypes = [ordered]@{}

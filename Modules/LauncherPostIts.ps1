@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherPostIts"
-    LoadOrder = 210
+    LoadOrder = 220
     RequiresModules = @("LauncherLogging", "LauncherSettings", "UI")
     RequiresFunctions = [ordered]@{
         "Get-LauncherSettingsFolder" = "LauncherSettings"

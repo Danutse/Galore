@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherSystemTools"
-    LoadOrder = 200
+    LoadOrder = 210
     RequiresModules = @("LauncherBrowser", "LauncherLogging", "UI")
     RequiresFunctions = [ordered]@{
         "Close-GaloreBrowserSelectorAnimated" = "LauncherBrowser"

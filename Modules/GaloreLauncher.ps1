@@ -323,7 +323,8 @@ function Test-GaloreModuleDependencies {
         }
         foreach($functionAst in $moduleAst.FindAll({
                 param($node)
-                $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Parent -isnot [System.Management.Automation.Language.FunctionMemberAst]
             }, $true
         )
         ) {
@@ -390,6 +391,7 @@ function Test-GaloreModuleDependencies {
 # ============================================================
 
 $GaloreModuleFiles = @(
+    "LauncherDomain.ps1"
     "LauncherLogging.ps1"
     "LauncherProcess.ps1"
     "LauncherStartup.ps1"

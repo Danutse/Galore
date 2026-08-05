@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherBrowser"
-    LoadOrder = 190
+    LoadOrder = 200
     RequiresModules = @("LauncherConfiguration", "LauncherLogging", "LauncherSettings")
     RequiresFunctions = [ordered]@{
         "Get-InstalledBrowsers" = "LauncherConfiguration"

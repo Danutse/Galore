@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherStartMenu"
-    LoadOrder = 170
+    LoadOrder = 180
     RequiresModules = @("LauncherSearch", "ProgramWindowUI", "UI")
     RequiresFunctions = [ordered]@{
         "Get-SearchResults" = "LauncherSearch"

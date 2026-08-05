@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherAction"
-    LoadOrder = 130
+    LoadOrder = 140
     RequiresModules = @("LauncherLogging", "LauncherPrograms", "UI")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"

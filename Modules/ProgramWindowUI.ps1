@@ -4,7 +4,7 @@
 
 $GaloreModuleManifest = [ordered]@{
     Name = "ProgramWindowUI"
-    LoadOrder = 160
+    LoadOrder = 170
     RequiresModules = @("LauncherDesktop", "LauncherSettings", "LauncherStartMenu", "UI")
     RequiresFunctions = [ordered]@{
         "New-CloseButton" = "LauncherDesktop"
