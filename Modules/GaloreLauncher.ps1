@@ -649,7 +649,7 @@ function Open-ProgramWindow {
         $checks[$categoryProgramName] = $CategoryControls.Checks[$categoryProgramName]
     }
     Register-GaloreCategoryHotkeys -Programs $Programs -Checks $checks -Statuses $statuses -AppRoot $AppRoot
-    Initialize-GaloreHotkeyButton -Form $form
+    $null = Initialize-GaloreHotkeyButton -Form $form
 
     # ============================================================
     # LAUNCHER ACTION BUTTONS
