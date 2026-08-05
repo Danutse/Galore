@@ -99,7 +99,7 @@ function Invoke-GaloreHotkeyCaptureInput {
         if($candidate) {
             $CaptureState.Pending[$field.Tag] = $candidate
             $field.Text = $candidate.DisplayText
-            $StatusLabel.Text = "Press Backspace to apply '$($candidate.DisplayText)'."
+            $StatusLabel.Text = "Backspace or Close saves $($candidate.DisplayText)."
             $StatusLabel.ForeColor = [System.Drawing.Color]::Gold
         }
         elseif($Event.KeyCode -notin @([System.Windows.Forms.Keys]::ControlKey, [System.Windows.Forms.Keys]::ShiftKey, [System.Windows.Forms.Keys]::Menu)) {
@@ -129,7 +129,7 @@ function Show-GaloreHotkeySettingsPopup {
     $popup.Controls.Add($heading)
     $hint = New-Object System.Windows.Forms.Label
     $hint.Bounds = [System.Drawing.Rectangle]::new(28, 53, $popup.ClientSize.Width - 56, 20)
-    $hint.Text = "Click the field, then press a key combination."
+    $hint.Text = "Enter a shortcut. Backspace or Close saves it."
     $hint.ForeColor = [System.Drawing.Color]::Gainsboro
     $hint.BackColor = [System.Drawing.Color]::Transparent
     $popup.Controls.Add($hint)
@@ -141,6 +141,7 @@ function Show-GaloreHotkeySettingsPopup {
     $captureStatus.ForeColor = [System.Drawing.Color]::Gainsboro
     $captureStatus.BackColor = [System.Drawing.Color]::Transparent
     $popup.Controls.Add($captureStatus)
+    $popup | Add-Member -MemberType NoteProperty -Name HotkeyStatusLabel -Value $captureStatus -Force
     $hotkeyFields = [ordered]@{}
     $hotkeyRows = @([pscustomobject]@{ Id = "LauncherToggle"; Name = "Show / hide Galore"; Hotkey = Get-GaloreLauncherToggleHotkey })
     for($number = 1; $number -le 4; $number++) {
@@ -233,6 +234,9 @@ function Show-GaloreHotkeySettingsPopup {
     }.GetNewClosure())
     $popup.Add_FormClosed({
         param($sender, $event)
+        if($sender.HotkeyCaptureState -and $sender.HotkeyCaptureState.Pending.Count -gt 0) {
+            Save-GalorePendingHotkeys -StatusLabel $sender.HotkeyStatusLabel -CaptureState $sender.HotkeyCaptureState | Out-Null
+        }
         Resume-GaloreHotkeys | Out-Null
         if($sender.HotkeyCaptureState) {
             $sender.HotkeyCaptureState.Pending.Clear()

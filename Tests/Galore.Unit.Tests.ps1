@@ -891,6 +891,36 @@ Describe "Hotkey settings persistence" {
 
     }
 
+    It "loads a saved shortcut override without rewriting it with the default" {
+
+        $savedSettings =
+        [pscustomobject]@{
+            Version = 2
+            LauncherToggle = [pscustomobject]@{
+                ModifierMask = 2
+                VirtualKey = 84
+                DisplayText = "Ctrl+T"
+            }
+            Categories = [pscustomobject]@{}
+        }
+
+        $savedSettings |
+        ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (Join-Path $script:GaloreHotkeyTestSettingsFolder "hotkeys.json")
+
+        Mock Save-GaloreHotkeySettings {}
+
+        Initialize-GaloreHotkeySettings
+
+        (Get-GaloreLauncherToggleHotkey).DisplayText |
+        Should Be "Ctrl+T"
+
+        Assert-MockCalled Save-GaloreHotkeySettings `
+        -Times 0 `
+        -Exactly
+
+    }
+
     It "formats a captured Ctrl+T shortcut for immediate display" {
 
         $event = [pscustomobject]@{

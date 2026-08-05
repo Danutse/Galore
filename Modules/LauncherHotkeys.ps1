@@ -287,11 +287,15 @@ function Initialize-GaloreHotkeySettings {
     $script:GaloreLauncherHotkey = Get-GaloreDefaultLauncherHotkey
     $script:GaloreCategoryHotkeys = [ordered]@{}
     foreach($categoryNumber in 1..4) { $categoryId = "Category$categoryNumber"; $script:GaloreCategoryHotkeys[$categoryId] = Get-GaloreDefaultCategoryHotkey -CategoryId $categoryId }
+    $loadedSavedSettings = $false
     if(Test-Path -LiteralPath $script:GaloreHotkeySettingsFile -PathType Leaf)
     {
         try {
             $saved = Get-Content -LiteralPath $script:GaloreHotkeySettingsFile -Raw | ConvertFrom-Json
-            if(Test-GaloreHotkeyDefinition $saved.LauncherToggle) { $script:GaloreLauncherHotkey = [pscustomobject]@{ ModifierMask = [int]$saved.LauncherToggle.ModifierMask; VirtualKey = [int]$saved.LauncherToggle.VirtualKey; DisplayText = [string]$saved.LauncherToggle.DisplayText } }
+            if(Test-GaloreHotkeyDefinition $saved.LauncherToggle) {
+                $script:GaloreLauncherHotkey = [pscustomobject]@{ ModifierMask = [int]$saved.LauncherToggle.ModifierMask; VirtualKey = [int]$saved.LauncherToggle.VirtualKey; DisplayText = [string]$saved.LauncherToggle.DisplayText }
+                $loadedSavedSettings = $true
+            }
             if($saved.Categories) {
                 foreach($categoryProperty in $saved.Categories.PSObject.Properties) {
                     if($script:GaloreCategoryHotkeys.Contains($categoryProperty.Name) -and (Test-GaloreHotkeyDefinition $categoryProperty.Value)) {
@@ -302,18 +306,22 @@ function Initialize-GaloreHotkeySettings {
         }
         catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to load saved hotkey settings; the default was restored." }
     }
-    Save-GaloreHotkeySettings
+    if(-not $loadedSavedSettings) { Save-GaloreHotkeySettings | Out-Null }
 }
 
 function Save-GaloreHotkeySettings {
-    if([string]::IsNullOrWhiteSpace([string]$script:GaloreHotkeySettingsFile) -or $null -eq $script:GaloreLauncherHotkey) { return }
+    if([string]::IsNullOrWhiteSpace([string]$script:GaloreHotkeySettingsFile) -or $null -eq $script:GaloreLauncherHotkey) { return $false }
     $temporaryFile = "$script:GaloreHotkeySettingsFile.$([guid]::NewGuid().ToString('N')).tmp"
     try {
         $settings = [pscustomobject]@{ Version = 2; LauncherToggle = $script:GaloreLauncherHotkey; Categories = [pscustomobject]$script:GaloreCategoryHotkeys }
         [IO.File]::WriteAllText($temporaryFile, ($settings | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
         Move-Item -LiteralPath $temporaryFile -Destination $script:GaloreHotkeySettingsFile -Force
+        return $true
     }
-    catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to save hotkey settings." }
+    catch {
+        Write-LauncherDiagnostic -Exception $_ -Context "Failed to save hotkey settings."
+        return $false
+    }
     finally { Remove-Item -LiteralPath $temporaryFile -Force -ErrorAction SilentlyContinue }
 }
 
@@ -338,7 +346,7 @@ function Set-GaloreLauncherToggleHotkey {
         return $false
     }
     $script:GaloreLauncherHotkey = [pscustomobject]@{ ModifierMask = $ModifierMask; VirtualKey = $VirtualKey; DisplayText = $DisplayText }
-    Save-GaloreHotkeySettings
+    Save-GaloreHotkeySettings | Out-Null
     return $true
 }
 
@@ -354,7 +362,7 @@ function Set-GaloreCategoryHotkey {
         return $false
     }
     $script:GaloreCategoryHotkeys[$CategoryId] = [pscustomobject]@{ ModifierMask = $ModifierMask; VirtualKey = $VirtualKey; DisplayText = $DisplayText }
-    Save-GaloreHotkeySettings
+    Save-GaloreHotkeySettings | Out-Null
     return $true
 }
 
@@ -384,7 +392,7 @@ function Set-GaloreHotkeyDefinitions {
     }
     $script:GaloreLauncherHotkey = [pscustomobject]@{ ModifierMask = [int]$LauncherToggle.ModifierMask; VirtualKey = [int]$LauncherToggle.VirtualKey; DisplayText = [string]$LauncherToggle.DisplayText }
     foreach($categoryNumber in 1..4) { $categoryId = "Category$categoryNumber"; $definition = $CategoryHotkeys[$categoryId]; $script:GaloreCategoryHotkeys[$categoryId] = [pscustomobject]@{ ModifierMask = [int]$definition.ModifierMask; VirtualKey = [int]$definition.VirtualKey; DisplayText = [string]$definition.DisplayText } }
-    Save-GaloreHotkeySettings
+    Save-GaloreHotkeySettings | Out-Null
     $script:GaloreHotkeysSuspended = $false
     return $true
 }
