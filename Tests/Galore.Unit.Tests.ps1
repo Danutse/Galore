@@ -1887,6 +1887,29 @@ Describe "Category and hotkey settings runtime ownership" {
         $runtime.ToolTip | Should BeNullOrEmpty
         $runtime.OwnerForm | Should BeNullOrEmpty
     }
+
+    It "keeps the hotkey icon bitmap separate from its runtime state" {
+
+        $runtime = [GaloreHotkeySettingsRuntimeState]::new()
+        $form = New-Object System.Windows.Forms.Form
+        $button = New-Object System.Windows.Forms.Panel
+        $iconBitmap = [System.Drawing.Bitmap]::new(1, 1)
+        $button.Tag = $iconBitmap
+
+        Mock New-HotkeysButton { $button }
+
+        try {
+            $result = Initialize-GaloreHotkeyButton -Form $form -Runtime $runtime
+
+            $result | Should Be $button
+            $button.Tag | Should Be $iconBitmap
+            $button.HotkeySettingsRuntime | Should Be $runtime
+        } finally {
+            Stop-GaloreHotkeySettingsResources -Runtime $runtime
+            $iconBitmap.Dispose()
+            $form.Dispose()
+        }
+    }
 }
 
 Describe "Configuration discovery contracts" {
