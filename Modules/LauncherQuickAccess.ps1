@@ -225,7 +225,14 @@ function Set-GaloreQuickAccessBarLocation {
     )
 
     $bar = $script:GaloreQuickAccessBar
-    $bar.ClientSize = [System.Drawing.Size]::new($LauncherForm.ClientSize.Width, 44)
+    $targetSize = [System.Drawing.Size]::new($LauncherForm.ClientSize.Width, 44)
+    $sizeChanged = $bar.ClientSize -ne $targetSize
+
+    if($sizeChanged)
+    {
+        $bar.ClientSize = $targetSize
+    }
+
     $bar.Location = $location
 
     if(
@@ -233,11 +240,18 @@ function Set-GaloreQuickAccessBarLocation {
         -not $script:GaloreQuickAccessDropSurface.IsDisposed
     )
     {
-        $script:GaloreQuickAccessDropSurface.ClientSize = $bar.ClientSize
+        if($script:GaloreQuickAccessDropSurface.ClientSize -ne $targetSize)
+        {
+            $script:GaloreQuickAccessDropSurface.ClientSize = $targetSize
+        }
+
         $script:GaloreQuickAccessDropSurface.Location = $location
     }
 
-    Render-GaloreQuickAccessBar
+    if($sizeChanged)
+    {
+        Render-GaloreQuickAccessBar
+    }
 
 }
 

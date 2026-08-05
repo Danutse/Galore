@@ -63,6 +63,8 @@ $script:RAMCleanerPowerShell = $null
 
 $script:RAMCleanerAsyncResult = $null
 
+$script:RAMCleanupTimer = $null
+
 function Clear-RAM
 {
 
@@ -167,6 +169,53 @@ function Clear-RAM
 
     $script:RAMCleanerAsyncResult =
     $script:RAMCleanerPowerShell.BeginInvoke()
+
+}
+
+# ============================================================
+# BACKGROUND RAM CLEANUP SCHEDULE
+# ============================================================
+
+function Initialize-RAMCleanupSchedule {
+
+    if(
+        $script:RAMCleanupTimer -and
+        -not $script:RAMCleanupTimer.IsDisposed
+    )
+    {
+        return
+    }
+
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 3600000
+
+    $timer.Add_Tick({
+
+        try
+        {
+            Clear-RAM
+
+            Write-GaloreLog `
+            -Level "INFO" `
+            -Component "Hardware" `
+            -Message "Scheduled hourly RAM cleanup started."
+        }
+        catch
+        {
+            Write-LauncherDiagnostic `
+            -Exception $_ `
+            -Context "Scheduled RAM cleanup could not be started."
+        }
+
+    }.GetNewClosure())
+
+    $timer.Start()
+    $script:RAMCleanupTimer = $timer
+
+    Write-GaloreLog `
+    -Level "INFO" `
+    -Component "Hardware" `
+    -Message "Scheduled RAM cleanup enabled every 60 minutes."
 
 }
 
@@ -570,6 +619,19 @@ $script:SystemTimer = $systemTimer
 # ============================================================
 
 function Stop-HardwareMonitor {
+
+    if(
+        $script:RAMCleanupTimer
+    )
+    {
+
+        $script:RAMCleanupTimer.Stop()
+
+        $script:RAMCleanupTimer.Dispose()
+
+        $script:RAMCleanupTimer = $null
+
+    }
 
     if(
         $script:HardwareReadTimer

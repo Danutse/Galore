@@ -1368,6 +1368,8 @@ Register-HardwareMonitorEvents `
 
 Initialize-HardwareCacheReader
 
+Initialize-RAMCleanupSchedule
+
 # ============================================================
 # TITLE BAR RESIZE HANDLER
 # ============================================================

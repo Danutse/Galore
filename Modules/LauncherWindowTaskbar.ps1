@@ -251,10 +251,20 @@ function Set-GaloreWindowTaskbarLocation {
         $left = $screen.WorkingArea.Left
     }
 
-    $bar.ClientSize = [System.Drawing.Size]::new(46, $height)
+    $targetSize = [System.Drawing.Size]::new(46, $height)
+    $sizeChanged = $bar.ClientSize -ne $targetSize
+
+    if($sizeChanged)
+    {
+        $bar.ClientSize = $targetSize
+    }
+
     $bar.Location = [System.Drawing.Point]::new($left, $screenPoint.Y)
 
-    Render-GaloreWindowTaskbar
+    if($sizeChanged)
+    {
+        Render-GaloreWindowTaskbar
+    }
 
 }
 
