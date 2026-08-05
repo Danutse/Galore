@@ -38,6 +38,39 @@ $GaloreModuleManifest = [ordered]@{
 $script:LauncherRuntimeStopped = $false
 
 # ============================================================
+# TRAY AUTOMATION SETTINGS
+# ============================================================
+
+function Initialize-GaloreTrayAutomation {
+    $script:GaloreTrayAutomationFile = Join-Path (Get-LauncherSettingsFolder) "tray-automation.json"
+    $script:GaloreTrayAutomation = [pscustomobject]@{ KeepRunningOnClose = $true }
+    if(Test-Path -LiteralPath $script:GaloreTrayAutomationFile -PathType Leaf) {
+        try {
+            $saved = Get-Content -LiteralPath $script:GaloreTrayAutomationFile -Raw | ConvertFrom-Json
+            if($null -ne $saved.KeepRunningOnClose) { $script:GaloreTrayAutomation.KeepRunningOnClose = [bool]$saved.KeepRunningOnClose }
+        }
+        catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to load tray automation settings; defaults were restored." }
+    }
+    Save-GaloreTrayAutomation
+}
+
+function Get-GaloreTrayAutomation {
+    if($null -eq $script:GaloreTrayAutomation) { Initialize-GaloreTrayAutomation }
+    return $script:GaloreTrayAutomation
+}
+
+function Save-GaloreTrayAutomation {
+    if($null -eq $script:GaloreTrayAutomation -or [string]::IsNullOrWhiteSpace([string]$script:GaloreTrayAutomationFile)) { return }
+    $temporaryFile = "$script:GaloreTrayAutomationFile.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        [IO.File]::WriteAllText($temporaryFile, ($script:GaloreTrayAutomation | ConvertTo-Json -Depth 2), (New-Object Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $temporaryFile -Destination $script:GaloreTrayAutomationFile -Force
+    }
+    catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to save tray automation settings." }
+    finally { Remove-Item -LiteralPath $temporaryFile -Force -ErrorAction SilentlyContinue }
+}
+
+# ============================================================
 # CLICK HARDWARE MONITOR TO CLEAN RAM
 # ============================================================
 
@@ -161,6 +194,8 @@ function Restore-LauncherWindow {
 
 function Initialize-SystemTray {
 
+Initialize-GaloreTrayAutomation
+
 $script:trayIcon =
 New-Object System.Windows.Forms.NotifyIcon
 
@@ -208,6 +243,16 @@ $script:TrayMenu.Items.Add(
     "Open Launcher"
 )
 
+$automationMenu = New-Object System.Windows.Forms.ToolStripMenuItem("Tray Automation")
+$keepRunningItem = New-Object System.Windows.Forms.ToolStripMenuItem("Keep running in tray when closed")
+$keepRunningItem.CheckOnClick = $true
+$keepRunningItem.Checked = (Get-GaloreTrayAutomation).KeepRunningOnClose
+$backupItem = New-Object System.Windows.Forms.ToolStripMenuItem("Create settings backup...")
+$automationMenu.DropDownItems.Add($keepRunningItem) | Out-Null
+$script:TrayMenu.Items.Add($automationMenu) | Out-Null
+$script:TrayMenu.Items.Add($backupItem) | Out-Null
+$script:TrayMenu.Items.Add("-") | Out-Null
+
 $exitItem =
 $script:TrayMenu.Items.Add(
     "Exit"
@@ -217,6 +262,16 @@ $showItem.Add_Click({
 
     Restore-LauncherWindow
 
+})
+
+$keepRunningItem.Add_Click({
+    $settings = Get-GaloreTrayAutomation
+    $settings.KeepRunningOnClose = [bool]$this.Checked
+    Save-GaloreTrayAutomation
+})
+
+$backupItem.Add_Click({
+    Export-GaloreSettingsBackup -Owner $script:LauncherForm | Out-Null
 })
 
 $exitItem.Add_Click({
@@ -480,9 +535,7 @@ function Register-LauncherClosingEvent {
             return
         }
 
-        if(
-            $sender.Tag -ne "Exit"
-        )
+        if($sender.Tag -ne "Exit" -and (Get-GaloreTrayAutomation).KeepRunningOnClose)
         {
 
             $e.Cancel =

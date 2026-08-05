@@ -15,6 +15,7 @@ if([string]::IsNullOrWhiteSpace($GaloreRoot))
 $GaloreRoot = (Resolve-Path -LiteralPath $GaloreRoot).Path
 $moduleRoot = Join-Path $GaloreRoot "Modules"
 $resourceRoot = Join-Path $GaloreRoot "resources"
+$programRoot = Join-Path $GaloreRoot "Programs"
 $mainScript = Join-Path $moduleRoot "GaloreLauncher.ps1"
 
 if([string]::IsNullOrWhiteSpace($OutputPath))
@@ -22,7 +23,7 @@ if([string]::IsNullOrWhiteSpace($OutputPath))
     $OutputPath = Join-Path $GaloreRoot "Release\GaloreLauncher.exe"
 }
 
-foreach($requiredPath in @($moduleRoot, $resourceRoot, $mainScript))
+foreach($requiredPath in @($moduleRoot, $resourceRoot, $programRoot, $mainScript))
 {
     if(-not (Test-Path -LiteralPath $requiredPath))
     {
@@ -141,6 +142,10 @@ try
 
     Sign-GaloreBinary -Path $temporaryOutput -Root $GaloreRoot
     Move-Item -LiteralPath $temporaryOutput -Destination $OutputPath -Force
+    $releaseProgramRoot = Join-Path $outputFolder "Programs"
+    if(Test-Path -LiteralPath $releaseProgramRoot) { Remove-Item -LiteralPath $releaseProgramRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $releaseProgramRoot -Force | Out-Null
+    Get-ChildItem -LiteralPath $programRoot -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $releaseProgramRoot -Recurse -Force }
     "Bundled Galore release created: $OutputPath"
 }
 finally

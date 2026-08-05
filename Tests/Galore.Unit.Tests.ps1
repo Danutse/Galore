@@ -64,6 +64,8 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherWindowTaskbar.ps1")
 
+. (Join-Path $moduleRoot "LauncherBackup.ps1")
+
 
 
 Describe "Launcher settings validation" {
@@ -800,6 +802,47 @@ Describe "Post-it persistence reads" {
         Should Be 0
 
         Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly
+
+    }
+
+}
+
+Describe "Settings backup selection" {
+
+    BeforeEach {
+
+        $script:GaloreBackupSettingsFolder = Join-Path $TestDrive "Settings"
+
+        New-Item -ItemType Directory -Path $script:GaloreBackupSettingsFolder -Force | Out-Null
+
+        Mock Get-LauncherSettingsFolder { $script:GaloreBackupSettingsFolder }
+
+    }
+
+    It "includes only Galore state files that exist" {
+
+        Set-Content -LiteralPath (Join-Path $script:GaloreBackupSettingsFolder "settings.json") -Value "{}"
+
+        Set-Content -LiteralPath (Join-Path $script:GaloreBackupSettingsFolder "categories.json") -Value "{}"
+
+        Set-Content -LiteralPath (Join-Path $script:GaloreBackupSettingsFolder "hotkeys.json") -Value "{}"
+
+        $files = @(Get-GaloreSettingsBackupFiles)
+
+        $files.Count |
+        Should Be 3
+
+        @($files | ForEach-Object { Split-Path $_ -Leaf }) |
+        Should Contain "settings.json"
+
+        @($files | ForEach-Object { Split-Path $_ -Leaf }) |
+        Should Contain "categories.json"
+
+        @($files | ForEach-Object { Split-Path $_ -Leaf }) |
+        Should Contain "hotkeys.json"
+
+        @($files | ForEach-Object { Split-Path $_ -Leaf }) |
+        Should Not Contain "maintenance-state.json"
 
     }
 

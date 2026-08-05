@@ -896,8 +896,8 @@ function New-TaskManagerButton {
 
     New-ImagePanel `
         -IconName "taskmanager.png" `
-        -X 907 `
-        -Y 499 `
+        -X 780 `
+        -Y 500 `
         -PanelWidth 30 `
         -PanelHeight 30 `
         -ImageWidth 30 `
@@ -913,8 +913,8 @@ function New-CmdButton {
 
     New-ImagePanel `
         -IconName "cmd.png" `
-        -X 942 `
-        -Y 499 `
+        -X 815 `
+        -Y 500 `
         -PanelWidth 30 `
         -PanelHeight 30 `
         -ImageWidth 30 `
@@ -947,7 +947,7 @@ function New-VolumeButton {
 
     New-ImagePanel `
         -IconName "volume.png" `
-        -X 40 `
+        -X 35 `
         -Y 45 `
         -PanelWidth 30 `
         -PanelHeight 30 `
@@ -964,7 +964,7 @@ function New-KeyboardLanguageButton {
 
     New-ImagePanel `
         -IconName "keyboard.png" `
-        -X 75 `
+        -X 65 `
         -Y 45 `
         -PanelWidth 30 `
         -PanelHeight 30 `
@@ -981,7 +981,7 @@ function New-PostItButton {
 
     New-ImagePanel `
         -IconName "postit.png" `
-        -X 110 `
+        -X 95 `
         -Y 45 `
         -PanelWidth 30 `
         -PanelHeight 30 `
@@ -998,7 +998,24 @@ function New-CalculatorButton {
 
     New-ImagePanel `
         -IconName "Calculator.png" `
-        -X 145 `
+        -X 125 `
+        -Y 45 `
+        -PanelWidth 30 `
+        -PanelHeight 30 `
+        -ImageWidth 30 `
+        -ImageHeight 30
+
+}
+
+# ==========================
+# HOTKEYS ICON
+# ==========================
+
+function New-HotkeysButton {
+
+    New-ImagePanel `
+        -IconName "Hotkeys.png" `
+        -X 155 `
         -Y 45 `
         -PanelWidth 30 `
         -PanelHeight 30 `

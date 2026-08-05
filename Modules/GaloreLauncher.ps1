@@ -1052,6 +1052,8 @@ $GaloreModuleFiles =
     "LauncherQuickAccess.ps1"
     "LauncherWindowTaskbar.ps1"
     "LauncherCategories.ps1"
+    "LauncherHotkeySettings.ps1"
+    "LauncherBackup.ps1"
 )
 
 $script:GaloreLoadedModules =
@@ -1280,6 +1282,8 @@ Write-GaloreLog `
 
 Initialize-HotkeySupport
 
+Initialize-GaloreHotkeySettings
+
 # ==========================
 # REGISTER CTRL + SHIFT + SPACE
 # ==========================
@@ -1459,6 +1463,15 @@ foreach($categoryProgramName in $CategoryControls.Programs.Keys)
     $Programs[$categoryProgramName] = $CategoryControls.Programs[$categoryProgramName]
     $checks[$categoryProgramName] = $CategoryControls.Checks[$categoryProgramName]
 }
+
+Register-GaloreCategoryHotkeys `
+    -Programs $Programs `
+    -Checks $checks `
+    -Statuses $statuses `
+    -AppRoot $AppRoot
+
+Initialize-GaloreHotkeyButton `
+    -Form $form
 
 # ============================================================
 # LAUNCHER ACTION BUTTONS

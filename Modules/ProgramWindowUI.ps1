@@ -966,7 +966,10 @@ function Restore-GaloreHeaderControlZOrder {
     foreach($control in @(
         $script:WindowsButton,
         $script:ClockLabel,
-        $script:DateLabel
+        $script:DateLabel,
+        $script:TaskManagerButton,
+        $script:CmdButton,
+        $script:GaloreHotkeysButton
     ))
     {
 
@@ -1154,6 +1157,16 @@ param(
     $taskManagerButton =
     New-TaskManagerButton
 
+    $taskManagerButton.Anchor =
+    [System.Windows.Forms.AnchorStyles]::Bottom -bor
+    [System.Windows.Forms.AnchorStyles]::Right
+
+    $taskManagerButton.Location =
+    [System.Drawing.Point]::new(
+        $Form.ClientSize.Width - 320,
+        $Form.ClientSize.Height - 47
+    )
+
     $taskManagerButton.Add_Click({
 
         Start-Process `
@@ -1164,6 +1177,9 @@ param(
     $Form.Controls.Add(
         $taskManagerButton
     )
+
+    $taskManagerButton.BringToFront()
+    $script:TaskManagerButton = $taskManagerButton
 
 }
 
@@ -1180,6 +1196,16 @@ param(
     $cmdButton =
     New-CmdButton
 
+    $cmdButton.Anchor =
+    [System.Windows.Forms.AnchorStyles]::Bottom -bor
+    [System.Windows.Forms.AnchorStyles]::Right
+
+    $cmdButton.Location =
+    [System.Drawing.Point]::new(
+        $Form.ClientSize.Width - 285,
+        $Form.ClientSize.Height - 47
+    )
+
     $cmdButton.Add_Click({
 
         Start-Process `
@@ -1191,6 +1217,9 @@ param(
     $Form.Controls.Add(
         $cmdButton
     )
+
+    $cmdButton.BringToFront()
+    $script:CmdButton = $cmdButton
 
 }
 
