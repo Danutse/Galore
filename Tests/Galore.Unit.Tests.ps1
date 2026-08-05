@@ -68,6 +68,12 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherHotkeys.ps1")
 
+. (Join-Path $moduleRoot "LauncherHotkeySettings.ps1")
+
+. (Join-Path $moduleRoot "LauncherCategories.ps1")
+
+. (Join-Path $moduleRoot "LauncherMaintenance.ps1")
+
 
 
 Describe "Launcher settings validation" {
@@ -1018,6 +1024,287 @@ Describe "Hotkey settings persistence" {
         -ParameterFilter {
             $LauncherToggle.DisplayText -eq "Ctrl+T"
         }
+
+    }
+
+}
+
+Describe "Category state contracts" {
+
+    BeforeEach {
+
+        $script:GaloreCategoryTestSettingsFolder = Join-Path $TestDrive "CategorySettings"
+
+        New-Item -ItemType Directory -Path $script:GaloreCategoryTestSettingsFolder -Force | Out-Null
+
+        Mock Get-LauncherSettingsFolder { $script:GaloreCategoryTestSettingsFolder }
+
+        Mock Write-LauncherDiagnostic {}
+
+        $script:GaloreCategoryState = $null
+
+        $script:GaloreCategoryFile = $null
+
+    }
+
+    It "creates four categories with five uniquely identified slots each" {
+
+        $state = New-GaloreCategoryState
+
+        @($state.Categories).Count |
+        Should Be 4
+
+        $slots = @($state.Categories | ForEach-Object { $_.Slots })
+
+        $slots.Count |
+        Should Be 20
+
+        @($slots.Id | Select-Object -Unique).Count |
+        Should Be 20
+
+        @($slots | Where-Object { $_.DisplayName -ne "Empty" -or $_.Selected -or $_.Path }).Count |
+        Should Be 0
+
+    }
+
+    It "round-trips category names, paths, labels, and selection state" {
+
+        $state = Initialize-GaloreCategoryState
+
+        $state.Categories[1].Name = "Recording"
+
+        $state.Categories[1].Slots[2].Path = "C:\\Tools\\Recorder.exe"
+
+        $state.Categories[1].Slots[2].DisplayName = "Recorder"
+
+        $state.Categories[1].Slots[2].Selected = $true
+
+        Save-GaloreCategoryState
+
+        $script:GaloreCategoryState = $null
+
+        $restored = Initialize-GaloreCategoryState
+
+        $restored.Categories[1].Name |
+        Should Be "Recording"
+
+        $restored.Categories[1].Slots[2].Path |
+        Should Be "C:\\Tools\\Recorder.exe"
+
+        $restored.Categories[1].Slots[2].DisplayName |
+        Should Be "Recorder"
+
+        $restored.Categories[1].Slots[2].Selected |
+        Should Be $true
+
+    }
+
+    It "restores defaults when saved category data has the wrong shape" {
+
+        [pscustomobject]@{
+            Version = 1
+            Categories = @([pscustomobject]@{ Name = "Incomplete"; Slots = @() })
+        } |
+        ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (Join-Path $script:GaloreCategoryTestSettingsFolder "categories.json") -Encoding UTF8
+
+        $state = Initialize-GaloreCategoryState
+
+        @($state.Categories).Count |
+        Should Be 4
+
+        $state.Categories[0].Name |
+        Should Be "Category 1"
+
+        Assert-MockCalled Write-LauncherDiagnostic -Times 1 -Exactly
+
+    }
+
+    It "recognizes only slots that have a non-empty executable path" {
+
+        Test-GaloreCategorySlotConfigured ([pscustomobject]@{ Path = "C:\\App.exe" }) |
+        Should Be $true
+
+        Test-GaloreCategorySlotConfigured ([pscustomobject]@{ Path = "   " }) |
+        Should Be $false
+
+    }
+
+}
+
+Describe "Configuration discovery contracts" {
+
+    It "returns the first existing candidate path" {
+
+        $first = Join-Path $TestDrive "first.exe"
+
+        $second = Join-Path $TestDrive "second.exe"
+
+        Set-Content -LiteralPath $first -Value "first"
+
+        Set-Content -LiteralPath $second -Value "second"
+
+        Find-ProgramPath -PossiblePaths @($first, $second) |
+        Should Be $first
+
+    }
+
+    It "returns null when no candidate exists" {
+
+        Find-ProgramPath -PossiblePaths @("", (Join-Path $TestDrive "missing.exe")) |
+        Should BeNullOrEmpty
+
+    }
+
+    It "prefers the portable BattleState executable under the application root" {
+
+        $portablePath = Join-Path $TestDrive "Programs\BattleState\BsgLauncher.exe"
+
+        New-Item -ItemType Directory -Path (Split-Path -Parent $portablePath) -Force | Out-Null
+
+        Set-Content -LiteralPath $portablePath -Value "launcher"
+
+        Find-BattleStateLauncherPath -ProgramRoot $TestDrive |
+        Should Be $portablePath
+
+    }
+
+    It "builds every launcher program with the process contract required by status logic" {
+
+        $programs = New-LauncherProgramConfiguration -EnvPaths @{
+            ScrcpyVBS = "C:\\Galore\\Programs\\scrcpy\\playphone.vbs"
+            Discord = "C:\\Apps\\Discord.exe"
+            Steam = "C:\\Apps\\Steam.exe"
+            Browsers = [ordered]@{}
+            BSG = "C:\\Apps\\BsgLauncher.exe"
+            RivaTuner = "C:\\Apps\\RTSS.exe"
+            MSIAfterBurner = "C:\\Apps\\MSIAfterburner.exe"
+            ShareX = "C:\\Apps\\ShareX.exe"
+            Spotify = "C:\\Apps\\Spotify.exe"
+        }
+
+        $programs.Count |
+        Should Be 9
+
+        foreach($program in $programs.Values) {
+
+            $program.ContainsKey("Path") |
+            Should Be $true
+
+            $program.ContainsKey("Args") |
+            Should Be $true
+
+            $program.ContainsKey("StatusProcess") |
+            Should Be $true
+
+            $program.ContainsKey("WindowProcess") |
+            Should Be $true
+
+        }
+
+    }
+
+}
+
+Describe "Maintenance state contracts" {
+
+    BeforeEach {
+
+        $script:GaloreMaintenanceMutex = $null
+
+        $script:GaloreMaintenanceMaximumStateBytes = 262144
+
+    }
+
+    It "normalizes invalid counters and shortcut candidates" {
+
+        $state = ConvertTo-ValidatedGaloreMaintenanceState -State ([pscustomobject]@{
+            TotalRuntimeSeconds = 7200
+            LastQuickRuntimeSeconds = -10
+            LastWeeklyRuntimeSeconds = "invalid"
+            LastMonthlyRuntimeSeconds = 30
+            LastSixtyDayRuntimeSeconds = 60
+            BrokenShortcutCandidates = @(
+                [pscustomobject]@{ Path = "C:\Missing.lnk"; FirstSeenRuntimeSeconds = 100 }
+                [pscustomobject]@{ Path = ""; FirstSeenRuntimeSeconds = 100 }
+                42
+            )
+        })
+
+        $state.TotalRuntimeSeconds |
+        Should Be 7200
+
+        $state.LastQuickRuntimeSeconds |
+        Should Be 0
+
+        $state.LastWeeklyRuntimeSeconds |
+        Should Be 0
+
+        @($state.BrokenShortcutCandidates).Count |
+        Should Be 1
+
+        $state.BrokenShortcutCandidates[0].Path |
+        Should Be "C:\Missing.lnk"
+
+    }
+
+    It "round-trips maintenance state through an atomic state file" {
+
+        $stateFile = Join-Path $TestDrive "State\\maintenance-state.json"
+
+        $state = New-GaloreMaintenanceState
+
+        $state.TotalRuntimeSeconds = 9876
+
+        $state.BrokenShortcutCandidates = @(
+            [pscustomobject]@{ Path = "C:\Old.lnk"; FirstSeenRuntimeSeconds = 500 }
+        )
+
+        Write-GaloreMaintenanceStateUnlocked -StateFile $stateFile -State $state |
+        Should Be $true
+
+        $restored = Read-GaloreMaintenanceStateUnlocked -StateFile $stateFile
+
+        $restored.TotalRuntimeSeconds |
+        Should Be 9876
+
+        $restored.BrokenShortcutCandidates[0].Path |
+        Should Be "C:\Old.lnk"
+
+        Test-Path -LiteralPath "$stateFile.tmp" |
+        Should Be $false
+
+    }
+
+    It "rejects oversized state files instead of parsing unbounded JSON" {
+
+        $stateFile = Join-Path $TestDrive "oversized.json"
+
+        Set-Content -LiteralPath $stateFile -Value ("x" * 5000) -Encoding UTF8
+
+        $script:GaloreMaintenanceMaximumStateBytes = 128
+
+        $state = Read-GaloreMaintenanceStateUnlocked -StateFile $stateFile
+
+        $state.TotalRuntimeSeconds |
+        Should Be 0
+
+        @($state.BrokenShortcutCandidates).Count |
+        Should Be 0
+
+    }
+
+    It "reports maintenance due only after a runtime interval is reached" {
+
+        $state = New-GaloreMaintenanceState
+
+        Test-GaloreMaintenanceIsDue -State $state |
+        Should Be $false
+
+        $state.TotalRuntimeSeconds = (2 * 60 * 60)
+
+        Test-GaloreMaintenanceIsDue -State $state |
+        Should Be $true
 
     }
 
