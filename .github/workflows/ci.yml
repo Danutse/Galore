@@ -22,7 +22,9 @@ jobs:
           Install-Module -Name Pester -RequiredVersion 4.10.1 -Scope CurrentUser -Force -SkipPublisherCheck
       - name: Run validation and unit tests
         shell: powershell
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1
+        run: |
+          New-Item -ItemType Directory -Path .\Logs -Force | Out-Null
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1
 
   compile-smoke:
     name: Compile disposable executable
@@ -38,4 +40,6 @@ jobs:
           Install-Module -Name ps2exe -Scope CurrentUser -Force
       - name: Compile-check the launcher
         shell: powershell
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1 -Compile
+        run: |
+          New-Item -ItemType Directory -Path .\Logs -Force | Out-Null
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-GaloreBuild.ps1 -Compile
