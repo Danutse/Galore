@@ -26,20 +26,10 @@ $GaloreModuleManifest = [ordered]@{
 # GLOBAL HOTKEY SUPPORT
 # ==========================
 
-function Initialize-HotkeySupport
-{
-
-Add-Type -AssemblyName System.Windows.Forms
-
-if(
-    -not (
-        "GlobalHotkey" -as [type]
-    )
-)
-{
-
-Add-Type -ReferencedAssemblies @(
-    "System.Windows.Forms.dll"
+function Initialize-HotkeySupport {
+    Add-Type -AssemblyName System.Windows.Forms
+    if(-not ("GlobalHotkey" -as [type])) {
+        Add-Type -ReferencedAssemblies @("System.Windows.Forms.dll"
 ) @"
 using System;
 using System.Windows.Forms;
@@ -103,163 +93,73 @@ public class GlobalHotkey : NativeWindow
 
 }
 "@
-}
-
+    }
 }
 
 # ==========================
 # REGISTER CTRL + SHIFT + SPACE
 # ==========================
 
-function Initialize-GlobalHotkey
-{
+function Initialize-GlobalHotkey {
+    param($WindowHandle)
+    $script:GlobalHotkeyHandle = $WindowHandle
 
-param(
-    $WindowHandle
-)
+    # ==========================
+    # CREATE LISTENER
+    # ==========================
 
-$script:GlobalHotkeyHandle = $WindowHandle
-
-# ==========================
-# CREATE LISTENER
-# ==========================
-
-$script:GlobalHotkeyWindow =
-New-Object GlobalHotkey(
-    $WindowHandle
-)
-
+    $script:GlobalHotkeyWindow = New-Object GlobalHotkey($WindowHandle)
 }
 
 # ==========================
 # UNREGISTER GLOBAL HOTKEY
 # ==========================
 
-function Stop-GlobalHotkey
-{
-
-if(
-    $script:GlobalHotkeyHandle
-)
-{
-
-    try
-    {
-
-        foreach($hotkeyId in 5000..5104)
-        {
-            [GlobalHotkey]::UnregisterHotKey(
-                $script:GlobalHotkeyHandle,
-                $hotkeyId
-            ) | Out-Null
+function Stop-GlobalHotkey {
+    if($script:GlobalHotkeyHandle) {
+        try {
+            foreach($hotkeyId in 5000..5104) {
+                [GlobalHotkey]::UnregisterHotKey($script:GlobalHotkeyHandle, $hotkeyId) | Out-Null
+            }
+        } catch {
         }
-
     }
-    catch
-    {
-
+    if($script:GlobalHotkeyWindow) {
+        try {
+            $script:GlobalHotkeyWindow.ReleaseHandle()
+        } catch {
+        }
     }
-
-}
-
-if(
-    $script:GlobalHotkeyWindow
-)
-{
-
-    try
-    {
-
-        $script:GlobalHotkeyWindow.ReleaseHandle()
-
-    }
-    catch
-    {
-
-    }
-
-}
-
-$script:GlobalHotkeyWindow = $null
-
-$script:GlobalHotkeyHandle = $null
-
+    $script:GlobalHotkeyWindow = $null
+    $script:GlobalHotkeyHandle = $null
 }
 
 # ==========================
 # TOGGLE WINDOW
 # ==========================
 
-function Register-LauncherToggleHotkey
-{
-
-param(
-    $Form
-)
-
-$hotkey =
-Get-GaloreLauncherToggleHotkey
-
-if(
-    -not [GlobalHotkey]::RegisterHotKey(
-        $script:GlobalHotkeyHandle,
-        5000,
-        $hotkey.ModifierMask,
-        $hotkey.VirtualKey
-    )
-)
-{
-    Write-LauncherDiagnostic `
-    -Exception ([System.InvalidOperationException]::new("The launcher hotkey '$($hotkey.DisplayText)' is already in use.")) `
-    -Context "Failed to register the launcher toggle hotkey."
-}
-
-$script:GlobalHotkeyWindow.add_HotkeyPressed({
-
-    if($script:GlobalHotkeyWindow.LastHotkeyId -ne 5000)
-    {
-        return
+function Register-LauncherToggleHotkey {
+    param($Form)
+    $hotkey = Get-GaloreLauncherToggleHotkey
+    if(-not [GlobalHotkey]::RegisterHotKey($script:GlobalHotkeyHandle, 5000, $hotkey.ModifierMask, $hotkey.VirtualKey)) {
+        Write-LauncherDiagnostic -Exception ([System.InvalidOperationException]::new("The launcher hotkey '$($hotkey.DisplayText)' is already in use.")) -Context "Failed to register the launcher toggle hotkey."
     }
-
-    if(
-        $script:LauncherWindowTargetVisible
-    )
-    {
-
-        Close-StartSearchWindowAnimated
-
-        $script:LauncherLocation =
-        $Form.Location
-
-        $script:LauncherSize =
-        $Form.Size
-
-        Hide-LauncherWindowAnimated `
-        -Form $Form `
-        -DurationMilliseconds 170
-
-    }
-
-    else
-    {
-
-        $Form.WindowState =
-        [System.Windows.Forms.FormWindowState]::Normal
-
-        $Form.Location =
-        $script:LauncherLocation
-
-        $Form.Size =
-        $script:LauncherSize
-
-        Show-LauncherWindowAnimated `
-        -Form $Form `
-        -DurationMilliseconds 220
-
-    }
-
-})
-
+    $script:GlobalHotkeyWindow.add_HotkeyPressed({
+        if($script:GlobalHotkeyWindow.LastHotkeyId -ne 5000) {
+            return
+        }
+        if($script:LauncherWindowTargetVisible) {
+            Close-StartSearchWindowAnimated
+            $script:LauncherLocation = $Form.Location
+            $script:LauncherSize = $Form.Size
+            Hide-LauncherWindowAnimated -Form $Form -DurationMilliseconds 170
+        } else {
+            $Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+            $Form.Location = $script:LauncherLocation
+            $Form.Size = $script:LauncherSize
+            Show-LauncherWindowAnimated -Form $Form -DurationMilliseconds 220
+        }
+    })
 }
 
 # ==========================
@@ -288,8 +188,7 @@ function Initialize-GaloreHotkeySettings {
     $script:GaloreCategoryHotkeys = [ordered]@{}
     foreach($categoryNumber in 1..4) { $categoryId = "Category$categoryNumber"; $script:GaloreCategoryHotkeys[$categoryId] = Get-GaloreDefaultCategoryHotkey -CategoryId $categoryId }
     $loadedSavedSettings = $false
-    if(Test-Path -LiteralPath $script:GaloreHotkeySettingsFile -PathType Leaf)
-    {
+    if(Test-Path -LiteralPath $script:GaloreHotkeySettingsFile -PathType Leaf) {
         try {
             $saved = Get-Content -LiteralPath $script:GaloreHotkeySettingsFile -Raw | ConvertFrom-Json
             if(Test-GaloreHotkeyDefinition $saved.LauncherToggle) {
@@ -303,8 +202,7 @@ function Initialize-GaloreHotkeySettings {
                     }
                 }
             }
-        }
-        catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to load saved hotkey settings; the default was restored." }
+        } catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to load saved hotkey settings; the default was restored." }
     }
     if(-not $loadedSavedSettings) { Save-GaloreHotkeySettings | Out-Null }
 }
@@ -317,8 +215,7 @@ function Save-GaloreHotkeySettings {
         [IO.File]::WriteAllText($temporaryFile, ($settings | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
         Move-Item -LiteralPath $temporaryFile -Destination $script:GaloreHotkeySettingsFile -Force
         return $true
-    }
-    catch {
+    } catch {
         Write-LauncherDiagnostic -Exception $_ -Context "Failed to save hotkey settings."
         return $false
     }

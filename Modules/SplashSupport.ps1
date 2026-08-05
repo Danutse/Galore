@@ -18,12 +18,7 @@ $GaloreModuleManifest = [ordered]@{
 # ALPHA SPLASH WINDOW
 # ============================================================
 
-if(
-    -not (
-        "AlphaSplashV2" -as [type]
-    )
-)
-{
+if(-not ("AlphaSplashV2" -as [type])) {
 Add-Type @"
 using System;
 using System.Drawing;
@@ -399,283 +394,92 @@ public class AlphaSplashV2
 }
 
 "@ `
--ReferencedAssemblies `
-"System.Windows.Forms.dll","System.Drawing.dll"
-
+    -ReferencedAssemblies "System.Windows.Forms.dll","System.Drawing.dll"
 }
-
 
 # ============================================================
 # SHOW LAUNCHER SPLASH
 # ============================================================
 
 function Set-SplashAlphaTransition {
-
-
-    param(
-        [System.Windows.Forms.Form]$Window,
-        [System.Drawing.Bitmap]$Image,
-        [int]$FromAlpha,
-        [int]$ToAlpha,
-        [int]$DurationMilliseconds
-    )
-
-
-
-    if(
-        $null -eq $Window -or
-        $null -eq $Image
-    )
-    {
-
+    param([System.Windows.Forms.Form]$Window, [System.Drawing.Bitmap]$Image, [int]$FromAlpha, [int]$ToAlpha, [int]$DurationMilliseconds)
+    if($null -eq $Window -or $null -eq $Image) {
         return
-
     }
-
-
-
-    if(
-        $DurationMilliseconds -le 0
-    )
-    {
-
-        [AlphaSplashV2]::SetAlpha(
-            $Window,
-            $Image,
-            [byte]$ToAlpha
-        )
-
-
-
+    if($DurationMilliseconds -le 0) {
+        [AlphaSplashV2]::SetAlpha($Window, $Image, [byte]$ToAlpha)
         return
-
     }
-
-
-
-    $transitionWatch =
-    [System.Diagnostics.Stopwatch]::StartNew()
-
-
-
-    do
-    {
-
-        $progress =
-        [Math]::Min(
-            1.0,
-            (
-                $transitionWatch.Elapsed.TotalMilliseconds /
-                $DurationMilliseconds
-            )
-        )
-
-
-
-        $easedProgress =
-        $progress * $progress * (
-            3 -
-            (2 * $progress)
-        )
-
-
-
-        $alpha =
-        [Math]::Round(
-            $FromAlpha +
-            (
-                (
-                    $ToAlpha -
-                    $FromAlpha
-                ) *
-                $easedProgress
-            )
-        )
-
-
-
-        [AlphaSplashV2]::SetAlpha(
-            $Window,
-            $Image,
-            [byte][Math]::Max(
-                0,
-                [Math]::Min(
-                    255,
-                    $alpha
-                )
-            )
-        )
-
-
-
+    $transitionWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    do {
+        $progress = [Math]::Min(1.0, ($transitionWatch.Elapsed.TotalMilliseconds / $DurationMilliseconds))
+        $easedProgress = $progress * $progress * (3 - (2 * $progress))
+        $alpha = [Math]::Round($FromAlpha + (($ToAlpha - $FromAlpha) * $easedProgress))
+        [AlphaSplashV2]::SetAlpha($Window, $Image, [byte][Math]::Max(0, [Math]::Min(255, $alpha)))
         [System.Windows.Forms.Application]::DoEvents()
-
-
-
-        if(
-            $progress -lt 1
-        )
-        {
-
+        if($progress -lt 1) {
             Start-Sleep -Milliseconds 15
-
         }
-
     }
-    while(
-        $progress -lt 1
-    )
-
-
+    while($progress -lt 1)
 }
 
 function Show-LauncherSplash {
-
-
-    param(
-        $AppRoot
-    )
-
+    param($AppRoot)
 
     # ========================================================
     # SPLASH SETTINGS
     # ========================================================
 
-    $SplashFadeInDuration =
-    420
-
-
-    $SplashFadeOutDuration =
-    320
-
-
-    $SplashHoldDuration =
-    750
-
-
+    $SplashFadeInDuration = 420
+    $SplashFadeOutDuration = 320
+    $SplashHoldDuration = 750
 
     # ========================================================
     # CREATE SPLASH
     # ========================================================
 
-    $splashPath =
-    Get-GaloreResourcePath `
-    "windows.png"
-
-
-
-    $script:SplashImage =
-    $null
-
-
-    $script:SplashWindow =
-    $null
-
-
-
-    if(
-        Test-Path $splashPath
-    )
-    {
-
-        $script:SplashImage =
-        [System.Drawing.Bitmap]::FromFile(
-            $splashPath
-        )
-
-
-
-        $script:SplashWindow =
-        [AlphaSplashV2]::Show(
-            $script:SplashImage
-        )
-
-
+    $splashPath = Get-GaloreResourcePath "windows.png"
+    $script:SplashImage = $null
+    $script:SplashWindow = $null
+    if(Test-Path $splashPath) {
+        $script:SplashImage = [System.Drawing.Bitmap]::FromFile($splashPath)
+        $script:SplashWindow = [AlphaSplashV2]::Show($script:SplashImage)
 
         # ====================================================
         # START INVISIBLE
         # ====================================================
 
-        [AlphaSplashV2]::SetAlpha(
-            $script:SplashWindow,
-            $script:SplashImage,
-            0
-        )
-
-
+        [AlphaSplashV2]::SetAlpha($script:SplashWindow, $script:SplashImage, 0)
 
         # ====================================================
         # FADE IN
         # ====================================================
 
-        Set-SplashAlphaTransition `
-        -Window $script:SplashWindow `
-        -Image $script:SplashImage `
-        -FromAlpha 0 `
-        -ToAlpha 255 `
-        -DurationMilliseconds $SplashFadeInDuration
-
-
-
-        [AlphaSplashV2]::SetAlpha(
-            $script:SplashWindow,
-            $script:SplashImage,
-            255
-        )
-
+        Set-SplashAlphaTransition -Window $script:SplashWindow -Image $script:SplashImage -FromAlpha 0 -ToAlpha 255 -DurationMilliseconds $SplashFadeInDuration
+        [AlphaSplashV2]::SetAlpha($script:SplashWindow, $script:SplashImage, 255)
     }
-
-
 
     # ========================================================
     # HOLD SPLASH
     # ========================================================
 
-    Start-Sleep `
-    -Milliseconds $SplashHoldDuration
-
-
+    Start-Sleep -Milliseconds $SplashHoldDuration
 
     # ========================================================
     # FADE OUT
     # ========================================================
 
-    if(
-        $script:SplashWindow
-    )
-    {
-
-        Set-SplashAlphaTransition `
-        -Window $script:SplashWindow `
-        -Image $script:SplashImage `
-        -FromAlpha 255 `
-        -ToAlpha 0 `
-        -DurationMilliseconds $SplashFadeOutDuration
-
-
-
+    if($script:SplashWindow) {
+        Set-SplashAlphaTransition -Window $script:SplashWindow -Image $script:SplashImage -FromAlpha 255 -ToAlpha 0 -DurationMilliseconds $SplashFadeOutDuration
         $script:SplashWindow.Close()
-
         $script:SplashWindow.Dispose()
-
         $script:SplashWindow = $null
-
     }
-
-
-
-    if(
-        $script:SplashImage
-    )
-    {
-
+    if($script:SplashImage) {
         $script:SplashImage.Dispose()
-
         $script:SplashImage = $null
-
     }
-
-
 }
 
 # ============================================================
@@ -683,63 +487,19 @@ function Show-LauncherSplash {
 # ============================================================
 
 function Stop-SplashResources {
-
-
-    if(
-        $script:SplashWindow
-    )
-    {
-
-        try
-        {
-
+    if($script:SplashWindow) {
+        try {
             $script:SplashWindow.Close()
-
-
-
             $script:SplashWindow.Dispose()
-
+        } catch {
         }
-        catch
-        {
-
-
-
-        }
-
-
-
-        $script:SplashWindow =
-        $null
-
+        $script:SplashWindow = $null
     }
-
-
-
-    if(
-        $script:SplashImage
-    )
-    {
-
-        try
-        {
-
+    if($script:SplashImage) {
+        try {
             $script:SplashImage.Dispose()
-
+        } catch {
         }
-        catch
-        {
-
-
-
-        }
-
-
-
-        $script:SplashImage =
-        $null
-
+        $script:SplashImage = $null
     }
-
-
 }

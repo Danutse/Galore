@@ -19,42 +19,16 @@ $GaloreModuleManifest = [ordered]@{
 # ============================================================
 
 function Find-ProgramPath {
-
-    param(
-        [string[]]$PossiblePaths
-    )
-
-    foreach(
-        $possiblePath in $PossiblePaths
-    )
-    {
-
-        if(
-            [string]::IsNullOrWhiteSpace(
-                $possiblePath
-            )
-        )
-        {
-
+    param([string[]]$PossiblePaths)
+    foreach($possiblePath in $PossiblePaths) {
+        if([string]::IsNullOrWhiteSpace($possiblePath)) {
             continue
-
         }
-
-        if(
-            Test-Path `
-            -LiteralPath $possiblePath `
-            -PathType Leaf
-        )
-        {
-
+        if(Test-Path -LiteralPath $possiblePath -PathType Leaf) {
             return $possiblePath
-
         }
-
     }
-
     return $null
-
 }
 
 # ============================================================
@@ -62,78 +36,34 @@ function Find-ProgramPath {
 # ============================================================
 
 function Find-BattleStateLauncherPath {
-
-    param(
-        [string]$ProgramRoot
-    )
-
-    $possiblePaths =
-    @(
+    param([string]$ProgramRoot)
+    $possiblePaths = @(
         (Join-Path $ProgramRoot "Programs\BattleState\BsgLauncher.exe")
         (Join-Path $env:ProgramFiles "Battlestate Games\BsgLauncher\BsgLauncher.exe")
         (Join-Path ${env:ProgramFiles(x86)} "Battlestate Games\BsgLauncher\BsgLauncher.exe")
         (Join-Path $env:LOCALAPPDATA "Battlestate Games\BsgLauncher\BsgLauncher.exe")
     )
-
     foreach($registryPath in @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
         "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    ))
-    {
-
-        foreach(
-            $application in @(
-                Get-ItemProperty `
-                -Path $registryPath `
-                -ErrorAction SilentlyContinue
+    )) {
+        foreach($application in @(
+                Get-ItemProperty -Path $registryPath -ErrorAction SilentlyContinue
             )
-        )
-        {
-
-            if(
-                [string]$application.DisplayName -notmatch
-                "(?i)(battlestate|escape from tarkov)"
-            )
-            {
-
+        ) {
+            if([string]$application.DisplayName -notmatch "(?i)(battlestate|escape from tarkov)") {
                 continue
-
             }
-
-            if(
-                -not [string]::IsNullOrWhiteSpace(
-                    [string]$application.InstallLocation
-                )
-            )
-            {
-
-                $possiblePaths +=
-                Join-Path `
-                $application.InstallLocation `
-                "BsgLauncher.exe"
-
+            if(-not [string]::IsNullOrWhiteSpace([string]$application.InstallLocation)) {
+                $possiblePaths += Join-Path $application.InstallLocation "BsgLauncher.exe"
             }
-
-            if(
-                -not [string]::IsNullOrWhiteSpace(
-                    [string]$application.DisplayIcon
-                )
-            )
-            {
-
-                $possiblePaths +=
-                ([string]$application.DisplayIcon -replace '"', '' -replace ',\d+$', '')
-
+            if(-not [string]::IsNullOrWhiteSpace([string]$application.DisplayIcon)) {
+                $possiblePaths += ([string]$application.DisplayIcon -replace '"', '' -replace ',\d+$', '')
             }
-
         }
-
     }
-
-    return Find-ProgramPath `
-    -PossiblePaths $possiblePaths
-
+    return Find-ProgramPath -PossiblePaths $possiblePaths
 }
 
 # ============================================================
@@ -141,12 +71,8 @@ function Find-BattleStateLauncherPath {
 # ============================================================
 
 function Get-InstalledBrowsers {
-
-    $browsers =
-    [ordered]@{}
-
-    foreach(
-        $browserDefinition in @(
+    $browsers = [ordered]@{}
+    foreach($browserDefinition in @(
             [pscustomobject]@{
                 Id = "Edge"
                 DisplayName = "Microsoft Edge"
@@ -249,30 +175,18 @@ function Get-InstalledBrowsers {
                 )
             }
         )
-    )
-    {
-
-        $browserPath =
-        Find-ProgramPath `
-        -PossiblePaths $browserDefinition.Paths
-
-        if($browserPath)
-        {
-
-            $browsers[$browserDefinition.Id] =
-            [pscustomobject]@{
+    ) {
+        $browserPath = Find-ProgramPath -PossiblePaths $browserDefinition.Paths
+        if($browserPath) {
+            $browsers[$browserDefinition.Id] = [pscustomobject]@{
                 Id = $browserDefinition.Id
                 DisplayName = $browserDefinition.DisplayName
                 Path = $browserPath
                 ProcessName = $browserDefinition.ProcessName
             }
-
         }
-
     }
-
     return $browsers
-
 }
 
 # ============================================================
@@ -280,68 +194,33 @@ function Get-InstalledBrowsers {
 # ============================================================
 
 function New-LauncherEnvironmentPaths {
-
-    param(
-        [string]$ResourceFolder,
-
-        [string]$ScrcpyFolder,
-
-        [string]$ProgramRoot
-    )
-
+    param([string]$ResourceFolder, [string]$ScrcpyFolder, [string]$ProgramRoot)
     return @{
-
-        AppIcon =
-        Join-Path `
-        $ResourceFolder `
-        "Galore.ico"
-
-        ScrcpyVBS =
-        Join-Path `
-        $ScrcpyFolder `
-        "playphone.vbs"
-
-        Discord =
-        Find-ProgramPath @(
+        AppIcon = Join-Path $ResourceFolder "Galore.ico"
+        ScrcpyVBS = Join-Path $ScrcpyFolder "playphone.vbs"
+        Discord = Find-ProgramPath @(
             "$env:LOCALAPPDATA\Discord\Update.exe"
         )
-
-        Steam =
-        Find-ProgramPath @(
+        Steam = Find-ProgramPath @(
             "${env:ProgramFiles(x86)}\Steam\Steam.exe"
             "${env:ProgramFiles}\Steam\Steam.exe"
         )
-
-        Browsers =
-        Get-InstalledBrowsers
-
-        BSG =
-        Find-BattleStateLauncherPath `
-        -ProgramRoot $ProgramRoot
-
-        RivaTuner =
-        Find-ProgramPath @(
+        Browsers = Get-InstalledBrowsers
+        BSG = Find-BattleStateLauncherPath -ProgramRoot $ProgramRoot
+        RivaTuner = Find-ProgramPath @(
             "${env:ProgramFiles(x86)}\RivaTuner Statistics Server\RTSS.exe"
         )
-
-        MSIAfterBurner =
-        Find-ProgramPath @(
+        MSIAfterBurner = Find-ProgramPath @(
             "${env:ProgramFiles(x86)}\MSI Afterburner\MSIAfterburner.exe"
         )
-
-        ShareX =
-        Find-ProgramPath @(
+        ShareX = Find-ProgramPath @(
             "${env:ProgramFiles}\ShareX\ShareX.exe"
         )
-
-        Spotify =
-        Find-ProgramPath @(
+        Spotify = Find-ProgramPath @(
             "$env:APPDATA\Spotify\Spotify.exe"
             "${env:ProgramFiles}\Spotify\Spotify.exe"
         )
-
     }
-
 }
 
 # ============================================================
@@ -349,206 +228,88 @@ function New-LauncherEnvironmentPaths {
 # ============================================================
 
 function New-LauncherProgramConfiguration {
-
-    param(
-        [hashtable]$EnvPaths
-    )
-
-    $defaultBrowser =
-    @(
-        $EnvPaths.Browsers.Values |
-        Select-Object -First 1
+    param([hashtable]$EnvPaths)
+    $defaultBrowser = @(
+        $EnvPaths.Browsers.Values | Select-Object -First 1
     )[0]
-
     return @{
-
         "Phone" = @{
-
-            Path =
-            "$env:SystemRoot\System32\wscript.exe"
-
-            Args =
-            "//nologo `"$($EnvPaths.ScrcpyVBS)`""
-
-            StatusProcess =
-            "scrcpy"
-
-            WindowProcess =
-            "scrcpy"
-
+            Path = "$env:SystemRoot\System32\wscript.exe"
+            Args = "//nologo `"$($EnvPaths.ScrcpyVBS)`""
+            StatusProcess = "scrcpy"
+            WindowProcess = "scrcpy"
         }
-
         "Discord" = @{
-
-            Path =
-            $EnvPaths.Discord
-
-            Args =
-            "--processStart Discord.exe"
-
-            StatusProcess =
-            "Discord"
-
-            WindowProcess =
-            "Discord"
-
+            Path = $EnvPaths.Discord
+            Args = "--processStart Discord.exe"
+            StatusProcess = "Discord"
+            WindowProcess = "Discord"
         }
-
         "Steam" = @{
-
-            Path =
-            $EnvPaths.Steam
-
-            Args =
-            "-silent"
-
-            StatusProcess =
-            "steam"
-
-            WindowProcess =
-            "steam"
-
+            Path = $EnvPaths.Steam
+            Args = "-silent"
+            StatusProcess = "steam"
+            WindowProcess = "steam"
         }
-
         "Browser" = @{
-
-            Path =
-            if($defaultBrowser)
-            {
+            Path = if($defaultBrowser) {
                 $defaultBrowser.Path
-            }
-            else
-            {
+            } else {
                 $null
             }
-
-            Args =
-            ""
-
-            StatusProcess =
-            if($defaultBrowser)
-            {
+            Args = ""
+            StatusProcess = if($defaultBrowser) {
                 $defaultBrowser.ProcessName
-            }
-            else
-            {
+            } else {
                 "browser"
             }
-
-            WindowProcess =
-            if($defaultBrowser)
-            {
+            WindowProcess = if($defaultBrowser) {
                 $defaultBrowser.ProcessName
-            }
-            else
-            {
+            } else {
                 "browser"
             }
-
-            BrowserId =
-            if($defaultBrowser)
-            {
+            BrowserId = if($defaultBrowser) {
                 $defaultBrowser.Id
-            }
-            else
-            {
+            } else {
                 $null
             }
-
-            BrowserDisplayName =
-            if($defaultBrowser)
-            {
+            BrowserDisplayName = if($defaultBrowser) {
                 $defaultBrowser.DisplayName
-            }
-            else
-            {
+            } else {
                 "No browser detected"
             }
-
         }
-
         "BattleStateLauncher" = @{
-
-            Path =
-            $EnvPaths.BSG
-
-            Args =
-            "-silent"
-
-            StatusProcess =
-            "BsgLauncher"
-
-            WindowProcess =
-            "BsgLauncher"
-
+            Path = $EnvPaths.BSG
+            Args = "-silent"
+            StatusProcess = "BsgLauncher"
+            WindowProcess = "BsgLauncher"
         }
-
         "RivaTuner" = @{
-
-            Path =
-            $EnvPaths.RivaTuner
-
-            Args =
-            "-silent"
-
-            StatusProcess =
-            "RTSS"
-
-            WindowProcess =
-            "RTSS"
-
+            Path = $EnvPaths.RivaTuner
+            Args = "-silent"
+            StatusProcess = "RTSS"
+            WindowProcess = "RTSS"
         }
-
         "MSI Afterburner" = @{
-
-            Path =
-            $EnvPaths.MSIAfterBurner
-
-            Args =
-            "-silent"
-
-            StatusProcess =
-            "MSIAfterburner"
-
-            WindowProcess =
-            "MSIAfterburner"
-
+            Path = $EnvPaths.MSIAfterBurner
+            Args = "-silent"
+            StatusProcess = "MSIAfterburner"
+            WindowProcess = "MSIAfterburner"
         }
-
         "ShareX" = @{
-
-            Path =
-            $EnvPaths.ShareX
-
-            Args =
-            "-silent"
-
-            StatusProcess =
-            "ShareX"
-
-            WindowProcess =
-            "ShareX"
-
+            Path = $EnvPaths.ShareX
+            Args = "-silent"
+            StatusProcess = "ShareX"
+            WindowProcess = "ShareX"
         }
-
         "Spotify" = @{
-
-            Path =
-            $EnvPaths.Spotify
-
-            Args =
-            "-silent"
-
-            StatusProcess =
-            "Spotify"
-
-            WindowProcess =
-            "Spotify"
-
+            Path = $EnvPaths.Spotify
+            Args = "-silent"
+            StatusProcess = "Spotify"
+            WindowProcess = "Spotify"
         }
-
     }
-
 }
 
 # ============================================================
@@ -556,91 +317,33 @@ function New-LauncherProgramConfiguration {
 # ============================================================
 
 function Test-LauncherConfigurationSchema {
-
-    param(
-        $Configuration
-    )
-
-    $errors =
-    New-Object System.Collections.ArrayList
-
-    if(
-        $null -eq $Configuration
-    )
-    {
-
-        $null =
-        $errors.Add(
-            "Configuration object is missing."
-        )
-
+    param($Configuration)
+    $errors = New-Object System.Collections.ArrayList
+    if($null -eq $Configuration) {
+        $null = $errors.Add("Configuration object is missing.")
         return [PSCustomObject]@{
             IsValid = $false
             Errors = @($errors)
         }
-
     }
-
-    foreach(
-        $propertyName in @(
+    foreach($propertyName in @(
             "ProgramRoot"
             "EnvPaths"
             "Programs"
         )
-    )
-    {
-
-        if(
-            $null -eq $Configuration.PSObject.Properties[$propertyName]
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "Configuration property '$propertyName' is missing."
-            )
-
+    ) {
+        if($null -eq $Configuration.PSObject.Properties[$propertyName]) {
+            $null = $errors.Add("Configuration property '$propertyName' is missing.")
         }
-
     }
-
-    if(
-        $null -ne $Configuration.PSObject.Properties["ProgramRoot"]
-    )
-    {
-
-        if(
-            -not ($Configuration.ProgramRoot -is [string]) -or
-            [string]::IsNullOrWhiteSpace($Configuration.ProgramRoot)
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "ProgramRoot must be a non-empty string."
-            )
-
+    if($null -ne $Configuration.PSObject.Properties["ProgramRoot"]) {
+        if(-not ($Configuration.ProgramRoot -is [string]) -or [string]::IsNullOrWhiteSpace($Configuration.ProgramRoot)) {
+            $null = $errors.Add("ProgramRoot must be a non-empty string.")
+        } elseif(-not (Test-Path -LiteralPath $Configuration.ProgramRoot -PathType Container)) {
+            $null = $errors.Add("ProgramRoot does not resolve to an existing folder.")
         }
-        elseif(
-            -not (
-                Test-Path `
-                -LiteralPath $Configuration.ProgramRoot `
-                -PathType Container
-            )
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "ProgramRoot does not resolve to an existing folder."
-            )
-
-        }
-
     }
-
-    $requiredEnvironmentPaths =
-    @(
+    $requiredEnvironmentPaths = @(
         "AppIcon"
         "ScrcpyVBS"
         "Discord"
@@ -652,125 +355,41 @@ function Test-LauncherConfigurationSchema {
         "ShareX"
         "Spotify"
     )
-
-    if(
-        $null -ne $Configuration.PSObject.Properties["EnvPaths"]
-    )
-    {
-
-        if(
-            -not ($Configuration.EnvPaths -is [System.Collections.IDictionary])
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "EnvPaths must be a dictionary."
-            )
-
-        }
-        else
-        {
-
-            foreach(
-                $pathName in $requiredEnvironmentPaths
-            )
-            {
-
-                if(
-                    -not $Configuration.EnvPaths.Contains($pathName)
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "EnvPaths entry '$pathName' is missing."
-                    )
-
+    if($null -ne $Configuration.PSObject.Properties["EnvPaths"]) {
+        if(-not ($Configuration.EnvPaths -is [System.Collections.IDictionary])) {
+            $null = $errors.Add("EnvPaths must be a dictionary.")
+        } else {
+            foreach($pathName in $requiredEnvironmentPaths) {
+                if(-not $Configuration.EnvPaths.Contains($pathName)) {
+                    $null = $errors.Add("EnvPaths entry '$pathName' is missing.")
                     continue
-
                 }
-
-                $pathValue =
-                $Configuration.EnvPaths[$pathName]
-
-                if($pathName -eq "Browsers")
-                {
-
-                    if(
-                        -not ($pathValue -is [System.Collections.IDictionary])
-                    )
-                    {
-
-                        $null =
-                        $errors.Add(
-                            "EnvPaths entry 'Browsers' must be a dictionary."
-                        )
-
+                $pathValue = $Configuration.EnvPaths[$pathName]
+                if($pathName -eq "Browsers") {
+                    if(-not ($pathValue -is [System.Collections.IDictionary])) {
+                        $null = $errors.Add("EnvPaths entry 'Browsers' must be a dictionary.")
                     }
-
                     continue
-
                 }
-
-                if(
-                    $null -ne $pathValue -and
-                    -not ($pathValue -is [string])
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "EnvPaths entry '$pathName' must be a string or null."
-                    )
-
+                if($null -ne $pathValue -and -not ($pathValue -is [string])) {
+                    $null = $errors.Add("EnvPaths entry '$pathName' must be a string or null.")
                     continue
-
                 }
-
-                if(
-                    $pathName -in @(
+                if($pathName -in @(
                         "AppIcon"
                         "ScrcpyVBS"
-                    ) -and
-                    [string]::IsNullOrWhiteSpace([string]$pathValue)
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "Required EnvPaths entry '$pathName' is empty."
-                    )
-
+                    ) -and [string]::IsNullOrWhiteSpace([string]$pathValue)
+                ) {
+                    $null = $errors.Add("Required EnvPaths entry '$pathName' is empty.")
                     continue
-
                 }
-
-                if(
-                    -not [string]::IsNullOrWhiteSpace([string]$pathValue) -and
-                    -not (
-                        Test-Path `
-                        -LiteralPath $pathValue `
-                        -PathType Leaf
-                    )
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "EnvPaths entry '$pathName' does not resolve to a file."
-                    )
-
+                if(-not [string]::IsNullOrWhiteSpace([string]$pathValue) -and -not (Test-Path -LiteralPath $pathValue -PathType Leaf)) {
+                    $null = $errors.Add("EnvPaths entry '$pathName' does not resolve to a file.")
                 }
-
             }
-
         }
-
     }
-
-    $requiredPrograms =
-    @(
+    $requiredPrograms = @(
         "Phone"
         "Discord"
         "Steam"
@@ -781,195 +400,59 @@ function Test-LauncherConfigurationSchema {
         "ShareX"
         "Spotify"
     )
-
-    $requiredProgramProperties =
-    @(
+    $requiredProgramProperties = @(
         "Path"
         "Args"
         "StatusProcess"
         "WindowProcess"
     )
-
-    if(
-        $null -ne $Configuration.PSObject.Properties["Programs"]
-    )
-    {
-
-        if(
-            -not ($Configuration.Programs -is [System.Collections.IDictionary])
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "Programs must be a dictionary."
-            )
-
-        }
-        else
-        {
-
-            foreach(
-                $programName in $requiredPrograms
-            )
-            {
-
-                if(
-                    -not $Configuration.Programs.Contains($programName)
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "Required program '$programName' is missing."
-                    )
-
+    if($null -ne $Configuration.PSObject.Properties["Programs"]) {
+        if(-not ($Configuration.Programs -is [System.Collections.IDictionary])) {
+            $null = $errors.Add("Programs must be a dictionary.")
+        } else {
+            foreach($programName in $requiredPrograms) {
+                if(-not $Configuration.Programs.Contains($programName)) {
+                    $null = $errors.Add("Required program '$programName' is missing.")
                     continue
-
                 }
-
-                $program =
-                $Configuration.Programs[$programName]
-
-                if(
-                    -not ($program -is [System.Collections.IDictionary])
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "Program '$programName' must be a dictionary."
-                    )
-
+                $program = $Configuration.Programs[$programName]
+                if(-not ($program -is [System.Collections.IDictionary])) {
+                    $null = $errors.Add("Program '$programName' must be a dictionary.")
                     continue
-
                 }
-
-                foreach(
-                    $programProperty in $requiredProgramProperties
-                )
-                {
-
-                    if(
-                        -not $program.Contains($programProperty)
-                    )
-                    {
-
-                        $null =
-                        $errors.Add(
-                            "Program '$programName' is missing '$programProperty'."
-                        )
-
+                foreach($programProperty in $requiredProgramProperties) {
+                    if(-not $program.Contains($programProperty)) {
+                        $null = $errors.Add("Program '$programName' is missing '$programProperty'.")
                     }
-
                 }
-
-                if(
-                    $program.Contains("Path") -and
-                    $null -ne $program.Path -and
-                    (
-                        -not ($program.Path -is [string]) -or
-                        [string]::IsNullOrWhiteSpace($program.Path)
-                    )
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "Program '$programName' Path must be a non-empty string or null."
-                    )
-
+                if($program.Contains("Path") -and $null -ne $program.Path -and (-not ($program.Path -is [string]) -or [string]::IsNullOrWhiteSpace($program.Path))) {
+                    $null = $errors.Add("Program '$programName' Path must be a non-empty string or null.")
                 }
-
-                if(
-                    $programName -eq "Phone" -and
-                    $program.Contains("Path") -and
-                    [string]::IsNullOrWhiteSpace([string]$program.Path)
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "Program 'Phone' requires an executable Path."
-                    )
-
+                if($programName -eq "Phone" -and $program.Contains("Path") -and [string]::IsNullOrWhiteSpace([string]$program.Path)) {
+                    $null = $errors.Add("Program 'Phone' requires an executable Path.")
                 }
-
-                if(
-                    $program.Contains("Path") -and
-                    -not [string]::IsNullOrWhiteSpace([string]$program.Path) -and
-                    -not (
-                        Test-Path `
-                        -LiteralPath $program.Path `
-                        -PathType Leaf
-                    )
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "Program '$programName' Path does not resolve to a file."
-                    )
-
+                if($program.Contains("Path") -and -not [string]::IsNullOrWhiteSpace([string]$program.Path) -and -not (Test-Path -LiteralPath $program.Path -PathType Leaf)) {
+                    $null = $errors.Add("Program '$programName' Path does not resolve to a file.")
                 }
-
-                if(
-                    $program.Contains("Args") -and
-                    -not ($program.Args -is [string])
-                )
-                {
-
-                    $null =
-                    $errors.Add(
-                        "Program '$programName' Args must be a string."
-                    )
-
+                if($program.Contains("Args") -and -not ($program.Args -is [string])) {
+                    $null = $errors.Add("Program '$programName' Args must be a string.")
                 }
-
-                foreach(
-                    $processProperty in @(
+                foreach($processProperty in @(
                         "StatusProcess"
                         "WindowProcess"
                     )
-                )
-                {
-
-                    if(
-                        $program.Contains($processProperty) -and
-                        (
-                            -not ($program[$processProperty] -is [string]) -or
-                            [string]::IsNullOrWhiteSpace(
-                                $program[$processProperty]
-                            )
-                        )
-                    )
-                    {
-
-                        $null =
-                        $errors.Add(
-                            "Program '$programName' $processProperty must be a non-empty string."
-                        )
-
+                ) {
+                    if($program.Contains($processProperty) -and (-not ($program[$processProperty] -is [string]) -or [string]::IsNullOrWhiteSpace($program[$processProperty]))) {
+                        $null = $errors.Add("Program '$programName' $processProperty must be a non-empty string.")
                     }
-
                 }
-
             }
-
         }
-
     }
-
     return [PSCustomObject]@{
-
-        IsValid =
-        $errors.Count -eq 0
-
-        Errors =
-        @($errors)
-
+        IsValid = $errors.Count -eq 0
+        Errors = @($errors)
     }
-
 }
 
 # ============================================================
@@ -977,16 +460,8 @@ function Test-LauncherConfigurationSchema {
 # ============================================================
 
 function Show-LauncherConfigurationError {
-
-    param(
-        [string]$Message
-    )
-
-    [System.Windows.Forms.MessageBox]::Show(
-        $Message,
-        "Launcher Error"
-    ) | Out-Null
-
+    param([string]$Message)
+    [System.Windows.Forms.MessageBox]::Show($Message, "Launcher Error") | Out-Null
 }
 
 # ============================================================
@@ -994,129 +469,47 @@ function Show-LauncherConfigurationError {
 # ============================================================
 
 function Initialize-LauncherConfiguration {
-
-    param(
-        [string]$AppRoot
-    )
-
-    if(
-        [string]::IsNullOrWhiteSpace(
-            $AppRoot
-        )
-    )
-    {
-
-        $ProgramRoot =
-        Split-Path `
-        ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) `
-        -Parent
-
-    }
-    else
-    {
-
+    param([string]$AppRoot)
+    if([string]::IsNullOrWhiteSpace($AppRoot)) {
+        $ProgramRoot = Split-Path ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) -Parent
+    } else {
         $ProgramRoot = $AppRoot
-
     }
-
-    $ResourceFolder =
-    $script:GaloreResourceRoot
-
-    $ProgramsFolder =
-    Join-Path `
-    $ProgramRoot `
-    "Programs"
-
-    $ScrcpyFolder =
-    Join-Path `
-    $ProgramsFolder `
-    "scrcpy"
-
-    $RequiredFolders =
-    @(
+    $ResourceFolder = $script:GaloreResourceRoot
+    $ProgramsFolder = Join-Path $ProgramRoot "Programs"
+    $ScrcpyFolder = Join-Path $ProgramsFolder "scrcpy"
+    $RequiredFolders = @(
         [PSCustomObject]@{
             Name = "Resources"
             Path = $ResourceFolder
         }
-
         [PSCustomObject]@{
             Name = "Programs"
             Path = $ProgramsFolder
         }
-
         [PSCustomObject]@{
             Name = "scrcpy"
             Path = $ScrcpyFolder
         }
     )
-
-    foreach(
-        $RequiredFolder in $RequiredFolders
-    )
-    {
-
-        if(
-            -not (
-                Test-Path `
-                -LiteralPath $RequiredFolder.Path `
-                -PathType Container
-            )
-        )
-        {
-
-            Show-LauncherConfigurationError `
-            -Message "Missing $($RequiredFolder.Name) folder."
-
+    foreach($RequiredFolder in $RequiredFolders) {
+        if(-not (Test-Path -LiteralPath $RequiredFolder.Path -PathType Container)) {
+            Show-LauncherConfigurationError -Message "Missing $($RequiredFolder.Name) folder."
             return $null
-
         }
-
     }
-
-    $EnvPaths =
-    New-LauncherEnvironmentPaths `
-    -ResourceFolder $ResourceFolder `
-    -ScrcpyFolder $ScrcpyFolder `
-    -ProgramRoot $ProgramRoot
-
-    $Programs =
-    New-LauncherProgramConfiguration `
-    -EnvPaths $EnvPaths
-
-    $Configuration =
-    [PSCustomObject]@{
-
-        ProgramRoot =
-        $ProgramRoot
-
-        EnvPaths =
-        $EnvPaths
-
-        Programs =
-        $Programs
-
+    $EnvPaths = New-LauncherEnvironmentPaths -ResourceFolder $ResourceFolder -ScrcpyFolder $ScrcpyFolder -ProgramRoot $ProgramRoot
+    $Programs = New-LauncherProgramConfiguration -EnvPaths $EnvPaths
+    $Configuration = [PSCustomObject]@{
+        ProgramRoot = $ProgramRoot
+        EnvPaths = $EnvPaths
+        Programs = $Programs
     }
-
-    $schemaValidation =
-    Test-LauncherConfigurationSchema `
-    -Configuration $Configuration
-
-    if(
-        -not $schemaValidation.IsValid
-    )
-    {
-
-        $errorMessage =
-        "Launcher configuration failed validation:`r`n`r`n- " +
-        ($schemaValidation.Errors -join "`r`n- ")
-
-        Show-LauncherConfigurationError `
-        -Message $errorMessage
-
+    $schemaValidation = Test-LauncherConfigurationSchema -Configuration $Configuration
+    if(-not $schemaValidation.IsValid) {
+        $errorMessage = "Launcher configuration failed validation:`r`n`r`n- " + ($schemaValidation.Errors -join "`r`n- ")
+        Show-LauncherConfigurationError -Message $errorMessage
         return $null
-
     }
-
     return $Configuration
-
 }

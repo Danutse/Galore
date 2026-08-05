@@ -17,9 +17,7 @@ $GaloreModuleManifest = [ordered]@{
     RequiresFiles = @()
     ProvidesTypes = @("GaloreWindowTaskbar.Native")
 }
-
-if(-not ("GaloreWindowTaskbar.Native" -as [type]))
-{
+if(-not ("GaloreWindowTaskbar.Native" -as [type])) {
     Add-Type @"
 using System;
 using System.Collections.Generic;
@@ -183,134 +181,84 @@ namespace GaloreWindowTaskbar
 }
 "@
 }
-
 $script:GaloreWindowTaskbar = $null
 $script:GaloreWindowTaskbarTimer = $null
 $script:GaloreWindowTaskbarSignature = $null
 $script:GaloreWindowTaskbarKeyColor = [System.Drawing.Color]::FromArgb(1, 2, 3)
 
 function Get-GaloreWindowTaskbarSignature {
-
     param([object[]]$Windows)
-
-    return (
-        @($Windows | ForEach-Object {
+    return (@($Windows | ForEach-Object {
             "$($_.Handle)|$($_.Title)"
         }) -join "`n"
     )
-
 }
 
 function Get-GaloreWindowTaskbarIcon {
-
     param([uint32]$ProcessId)
-
-    try
-    {
+    try {
         $process = [System.Diagnostics.Process]::GetProcessById($ProcessId)
         $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($process.MainModule.FileName)
-
-        try
-        {
+        try {
             return [GaloreAlphaOverlay.PerPixelAlphaForm]::IconToAlphaBitmap($icon, 32, 32)
         }
         finally { if($icon) { $icon.Dispose() } }
-    }
-    catch
-    {
+    } catch {
         return $null
     }
-
 }
 
 function Set-GaloreWindowTaskbarLocation {
-
     param([System.Windows.Forms.Form]$Form)
-
-    if(
-        $null -eq $script:GaloreWindowTaskbar -or
-        $script:GaloreWindowTaskbar.IsDisposed -or
-        $Form.IsDisposed -or
-        $Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -or
-        $Form.ClientSize.Width -le 0 -or
-        $Form.ClientSize.Height -le 0
-    )
-    {
+    if($null -eq $script:GaloreWindowTaskbar -or $script:GaloreWindowTaskbar.IsDisposed -or $Form.IsDisposed -or $Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -or $Form.ClientSize.Width -le 0 -or $Form.ClientSize.Height -le 0) {
         return
     }
-
     $bar = $script:GaloreWindowTaskbar
     $top = 44
     $height = [Math]::Max(44, ($Form.ClientSize.Height - $top))
     $screenPoint = $Form.PointToScreen([System.Drawing.Point]::new(0, $top))
     $screen = [System.Windows.Forms.Screen]::FromControl($Form)
     $left = $screenPoint.X - 50
-
-    if($left -lt $screen.WorkingArea.Left)
-    {
+    if($left -lt $screen.WorkingArea.Left) {
         $left = $screen.WorkingArea.Left
     }
-
     $targetSize = [System.Drawing.Size]::new(46, $height)
     $sizeChanged = $bar.ClientSize -ne $targetSize
-
-    if($sizeChanged)
-    {
+    if($sizeChanged) {
         $bar.ClientSize = $targetSize
     }
-
     $bar.Location = [System.Drawing.Point]::new($left, $screenPoint.Y)
-
-    if($sizeChanged)
-    {
+    if($sizeChanged) {
         Render-GaloreWindowTaskbar
     }
-
 }
 
 function Update-GaloreWindowTaskbar {
-
-    if($null -eq $script:GaloreWindowTaskbar -or $script:GaloreWindowTaskbar.IsDisposed)
-    {
+    if($null -eq $script:GaloreWindowTaskbar -or $script:GaloreWindowTaskbar.IsDisposed) {
         return
     }
-
-    try
-    {
+    try {
         $windows = @([GaloreWindowTaskbar.Native]::GetTaskbarWindows($PID))
         $signature = Get-GaloreWindowTaskbarSignature -Windows $windows
-
-        if($signature -eq $script:GaloreWindowTaskbarSignature)
-        {
+        if($signature -eq $script:GaloreWindowTaskbarSignature) {
             return
         }
-
         $script:GaloreWindowTaskbarSignature = $signature
         $bar = $script:GaloreWindowTaskbar
-
-        foreach($control in @($bar.Controls))
-        {
-            if($control.Image)
-            {
+        foreach($control in @($bar.Controls)) {
+            if($control.Image) {
                 $image = $control.Image
                 $control.Image = $null
                 $image.Dispose()
             }
-
             $control.Dispose()
         }
-
         $bar.Controls.Clear()
-
         [int]$top = 6
-
-        foreach($window in $windows)
-        {
-            if(($top + 34) -gt $bar.ClientSize.Height)
-            {
+        foreach($window in $windows) {
+            if(($top + 34) -gt $bar.ClientSize.Height) {
                 break
             }
-
             $entry = New-Object System.Windows.Forms.PictureBox
             $entry.Size = [System.Drawing.Size]::new(34, 34)
             $entry.Location = [System.Drawing.Point]::new(6, $top)
@@ -319,149 +267,97 @@ function Update-GaloreWindowTaskbar {
             $entry.BackColor = $script:GaloreWindowTaskbarKeyColor
             $entry.Image = Get-GaloreWindowTaskbarIcon -ProcessId $window.ProcessId
             $entry.Tag = $window
-
             $entry.Add_Click({
                 param($sender, $e)
                 [GaloreWindowTaskbar.Native]::ActivateOrMinimize($sender.Tag.Handle)
             })
-
             $entry.Add_MouseUp({
                 param($sender, $e)
-
-                if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right)
-                {
+                if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
                     [GaloreWindowTaskbar.Native]::RequestClose($sender.Tag.Handle)
                 }
             })
-
             $toolTip = New-Object System.Windows.Forms.ToolTip
             $toolTip.SetToolTip($entry, "$($window.Title)`nRight-click to close")
             $entry.Visible = $false
             $bar.Controls.Add($entry)
             $top += 40
         }
-
         Render-GaloreWindowTaskbar
-    }
-    catch
-    {
+    } catch {
         Write-LauncherDiagnostic -Exception $_ -Context "Failed to refresh the window taskbar."
     }
-
 }
 
 function Render-GaloreWindowTaskbar {
-
     $bar = $script:GaloreWindowTaskbar
-    if($null -eq $bar -or $bar.IsDisposed -or -not $bar.IsHandleCreated)
-    {
+    if($null -eq $bar -or $bar.IsDisposed -or -not $bar.IsHandleCreated) {
         return
     }
-
-    if($bar.ClientSize.Width -le 0 -or $bar.ClientSize.Height -le 0)
-    {
+    if($bar.ClientSize.Width -le 0 -or $bar.ClientSize.Height -le 0) {
         return
     }
-
-    $bitmap = New-Object System.Drawing.Bitmap(
-        $bar.ClientSize.Width,
-        $bar.ClientSize.Height,
-        [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb
-    )
+    $bitmap = New-Object System.Drawing.Bitmap($bar.ClientSize.Width, $bar.ClientSize.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-
-    try
-    {
+    try {
         $graphics.Clear([System.Drawing.Color]::Transparent)
-
-        foreach($control in @($bar.Controls))
-        {
-            if($control.Image)
-            {
+        foreach($control in @($bar.Controls)) {
+            if($control.Image) {
                 $graphics.DrawImage($control.Image, $control.Bounds)
             }
         }
-
         $bar.SetLayeredBitmap($bitmap)
-    }
-    finally
-    {
+    } finally {
         $graphics.Dispose()
         $bitmap.Dispose()
     }
-
 }
 
 function Initialize-GaloreWindowTaskbar {
-
     param([System.Windows.Forms.Form]$Form)
-
     $bar = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
     $bar.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
     $bar.ShowInTaskbar = $false
     $bar.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
     $bar.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
     $bar.Owner = $Form
-
     $bar.Add_MouseUp({
         param($sender, $e)
-
         $entry = @($sender.Controls | Where-Object { $_.Bounds.Contains($e.Location) }) | Select-Object -First 1
-        if($null -eq $entry)
-        {
+        if($null -eq $entry) {
             return
         }
-
-        if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right)
-        {
+        if($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
             [GaloreWindowTaskbar.Native]::RequestClose($entry.Tag.Handle)
-        }
-        elseif($e.Button -eq [System.Windows.Forms.MouseButtons]::Left)
-        {
+        } elseif($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
             [GaloreWindowTaskbar.Native]::ActivateOrMinimize($entry.Tag.Handle)
         }
     }.GetNewClosure())
-
     $bar.Add_FormClosed({
         param($sender, $e)
-        foreach($control in @($sender.Controls))
-        {
-            if($control.Image)
-            {
+        foreach($control in @($sender.Controls)) {
+            if($control.Image) {
                 $control.Image.Dispose()
                 $control.Image = $null
             }
         }
     })
-
     $script:GaloreWindowTaskbar = $bar
-
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 1000
     $timer.Add_Tick({
-        try
-        {
+        try {
             Update-GaloreWindowTaskbar
-        }
-        catch
-        {
-            try
-            {
-                Write-LauncherDiagnostic `
-                -Exception $_ `
-                -Context "Window taskbar timer stopped after an internal error."
-            }
-            catch
-            {
+        } catch {
+            try {
+                Write-LauncherDiagnostic -Exception $_ -Context "Window taskbar timer stopped after an internal error."
+            } catch {
             }
         }
     }.GetNewClosure())
     $timer.Start()
     $script:GaloreWindowTaskbarTimer = $timer
-
-    Register-GaloreOverlayLifecycle `
-    -Form $Form
-
+    Register-GaloreOverlayLifecycle -Form $Form
     $Form.Add_Move({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
     $Form.Add_SizeChanged({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
     $Form.Add_FormClosed({ Stop-GaloreWindowTaskbar }.GetNewClosure())
@@ -471,46 +367,23 @@ function Initialize-GaloreWindowTaskbar {
         Set-GaloreWindowTaskbarLocation -Form $Form
         Update-GaloreWindowTaskbar
         $script:GaloreOverlayLifecycleReady = $true
-        Show-GaloreLauncherOverlayBars `
-        -DurationMilliseconds 420
+        Show-GaloreLauncherOverlayBars -DurationMilliseconds 420
     }.GetNewClosure())
-
 }
 
 function Stop-GaloreWindowTaskbar {
-
-    if($script:GaloreWindowTaskbarTimer)
-    {
+    if($script:GaloreWindowTaskbarTimer) {
         $script:GaloreWindowTaskbarTimer.Stop()
         $script:GaloreWindowTaskbarTimer.Dispose()
         $script:GaloreWindowTaskbarTimer = $null
     }
-
-    if($script:GaloreWindowTaskbar -and -not $script:GaloreWindowTaskbar.IsDisposed)
-    {
+    if($script:GaloreWindowTaskbar -and -not $script:GaloreWindowTaskbar.IsDisposed) {
         $script:GaloreWindowTaskbar.Close()
     }
-
     $script:GaloreWindowTaskbar = $null
     $script:GaloreWindowTaskbarSignature = $null
-
 }
-
-foreach($callbackName in @(
-    "Get-GaloreWindowTaskbarIcon",
-    "Set-GaloreWindowTaskbarLocation",
-    "Update-GaloreWindowTaskbar",
-    "Render-GaloreWindowTaskbar",
-    "Stop-GaloreWindowTaskbar"
-))
-{
-    $callback = Get-Command `
-    -Name $callbackName `
-    -CommandType Function `
-    -ErrorAction Stop
-
-    Set-Item `
-    -Path ("Function:global:{0}" -f $callbackName) `
-    -Value $callback.ScriptBlock `
-    -Force
+foreach($callbackName in @("Get-GaloreWindowTaskbarIcon", "Set-GaloreWindowTaskbarLocation", "Update-GaloreWindowTaskbar", "Render-GaloreWindowTaskbar", "Stop-GaloreWindowTaskbar")) {
+    $callback = Get-Command -Name $callbackName -CommandType Function -ErrorAction Stop
+    Set-Item -Path ("Function:global:{0}" -f $callbackName) -Value $callback.ScriptBlock -Force
 }

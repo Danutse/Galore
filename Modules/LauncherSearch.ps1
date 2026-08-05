@@ -21,29 +21,13 @@ $GaloreModuleManifest = [ordered]@{
 # ==========================
 
 function New-SearchResult {
-
-param(
-
-    [string]$Name,
-
-    [string]$Path,
-
-    [string]$Type
-
-)
-
-$result = @{
-
-    Name = $Name
-
-    Path = $Path
-
-    Type = $Type
-
-}
-
-return $result
-
+    param([string]$Name, [string]$Path, [string]$Type)
+    $result = @{
+        Name = $Name
+        Path = $Path
+        Type = $Type
+    }
+    return $result
 }
 
 # ==========================
@@ -51,47 +35,20 @@ return $result
 # ==========================
 
 function Invoke-WindowsSearch {
-
-    param(
-        [string]$Query
-    )
-
-    $results =
-    New-Object System.Collections.ArrayList
-
+    param([string]$Query)
+    $results = New-Object System.Collections.ArrayList
     $connection = $null
-
     $command = $null
-
     $reader = $null
-
-    if(
-        [string]::IsNullOrWhiteSpace($Query)
-    )
-    {
+    if([string]::IsNullOrWhiteSpace($Query)) {
         return $results
     }
-
-    try
-    {
-
-        $connection =
-        New-Object System.Data.OleDb.OleDbConnection
-
-        $connection.ConnectionString =
-        "Provider=Search.CollatorDSO;Extended Properties='Application=Windows'"
-
+    try {
+        $connection = New-Object System.Data.OleDb.OleDbConnection
+        $connection.ConnectionString = "Provider=Search.CollatorDSO;Extended Properties='Application=Windows'"
         $connection.Open()
-
-        $command =
-        $connection.CreateCommand()
-
-        $safeQuery =
-        $Query.Replace(
-            "'",
-            "''"
-        )
-
+        $command = $connection.CreateCommand()
+        $safeQuery = $Query.Replace("'", "''")
         $command.CommandText =
         "
         SELECT TOP 25
@@ -105,218 +62,70 @@ function Invoke-WindowsSearch {
 System.ItemName LIKE '%$safeQuery%'
 
         "
-
-        $reader =
-        $command.ExecuteReader()
-
-        while(
-            $reader.Read()
-        )
-        {
-
-            $path =
-            $reader.GetValue(0)
-
-            if(
-                [string]::IsNullOrWhiteSpace($path)
-            )
-            {
+        $reader = $command.ExecuteReader()
+        while($reader.Read()) {
+            $path = $reader.GetValue(0)
+            if([string]::IsNullOrWhiteSpace($path)) {
                 continue
             }
-
-            $path =
-            $path.Replace(
-                "\Utilisateurs\",
-                "\Users\"
-            )
-
-            if(
-                Test-Path $path
-            )
-            {
-
-                try
-                {
-
-                    $item =
-                    Get-Item `
-                    -LiteralPath $path `
-                    -ErrorAction Stop
-
-                }
-
-                catch
-                {
-
+            $path = $path.Replace("\Utilisateurs\", "\Users\")
+            if(Test-Path $path) {
+                try {
+                    $item = Get-Item -LiteralPath $path -ErrorAction Stop
+                } catch {
                     continue
-
                 }
 
                 # ==========================
                 # FILTER ALLOWED TYPES
                 # ==========================
 
-                $extension =
-                $item.Extension
-
-                if(
-                    $extension -ne ".exe" -and
-                    $extension -ne ".lnk" -and
-                    $extension -notin @(
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
-                        ".gif",
-                        ".bmp",
-                        ".tif",
-                        ".tiff",
-                        ".webp",
-                        ".ico",
-                        ".heic",
-                        ".avif"
-                    ) -and
-                    -not $item.PSIsContainer
-                )
-                {
+                $extension = $item.Extension
+                if($extension -ne ".exe" -and $extension -ne ".lnk" -and $extension -notin @(".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".ico", ".heic", ".avif") -and -not $item.PSIsContainer) {
                     continue
                 }
-
-                if($item.PSIsContainer)
-                {
+                if($item.PSIsContainer) {
                     $type = "Folder"
-                }
-                elseif(
-                    $item.Extension -eq ".exe"
-                )
-                {
+                } elseif($item.Extension -eq ".exe") {
                     $type = "EXE"
-                }
-                elseif(
-                    $item.Extension -eq ".lnk"
-                )
-                {
+                } elseif($item.Extension -eq ".lnk") {
                     $type = "Shortcut"
-                }
-                elseif(
-                    $item.Extension -in @(
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
-                        ".gif",
-                        ".bmp",
-                        ".tif",
-                        ".tiff",
-                        ".webp",
-                        ".ico",
-                        ".heic",
-                        ".avif"
-                    )
-                )
-                {
+                } elseif($item.Extension -in @(".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".ico", ".heic", ".avif")) {
                     $type = "Image"
                 }
-
-                $result =
-New-SearchResult `
--Name $item.Name `
--Path $item.FullName `
--Type $type
-
-$results.Add(
-    $result
-) | Out-Null
-
+                $result = New-SearchResult -Name $item.Name -Path $item.FullName -Type $type
+                $results.Add($result) | Out-Null
             }
-
         }
-
         $script:SearchDiagnosticLogged = $false
-
-    }
-
-    catch
-    {
-
-        if(
-            -not $script:SearchDiagnosticLogged
-        )
-        {
-
-            Write-LauncherDiagnostic `
-            -Exception $_ `
-            -Context "Windows Search failed for query '$Query'."
-
+    } catch {
+        if(-not $script:SearchDiagnosticLogged) {
+            Write-LauncherDiagnostic -Exception $_ -Context "Windows Search failed for query '$Query'."
             $script:SearchDiagnosticLogged = $true
-
         }
-
-    }
-
-    finally
-    {
-
-        if(
-            $reader
-        )
-        {
-
-            try
-            {
-
+    } finally {
+        if($reader) {
+            try {
                 $reader.Close()
-
                 $reader.Dispose()
-
+            } catch {
             }
-            catch
-            {
-
-            }
-
         }
-
-        if(
-            $command
-        )
-        {
-
-            try
-            {
-
+        if($command) {
+            try {
                 $command.Dispose()
-
+            } catch {
             }
-            catch
-            {
-
-            }
-
         }
-
-        if(
-            $connection
-        )
-        {
-
-            try
-            {
-
+        if($connection) {
+            try {
                 $connection.Close()
-
                 $connection.Dispose()
-
+            } catch {
             }
-            catch
-            {
-
-            }
-
         }
-
     }
-
     return $results
-
 }
 
 # ==========================
@@ -324,66 +133,29 @@ $results.Add(
 # ==========================
 
 function Get-SearchResults {
+    param([string]$query)
+    $SearchResults = New-Object System.Collections.ArrayList
 
-param(
-    [string]$query
-)
+    # ==========================
+    # WINDOWS FILE SEARCH
+    # ==========================
 
-$SearchResults =
-New-Object System.Collections.ArrayList
+    $WindowsResults = Invoke-WindowsSearch $query
+    foreach($item in $WindowsResults) {
+        $SearchResults.Add($item) | Out-Null
+    }
 
-# ==========================
-# WINDOWS FILE SEARCH
-# ==========================
+    # ==========================
+    # SEARCH INSTALLED APPS
+    # ==========================
 
-$WindowsResults =
-Invoke-WindowsSearch `
-$query
-
-foreach(
-    $item in $WindowsResults
-)
-{
-
-    $SearchResults.Add(
-        $item
-    ) | Out-Null
-
-}
-
-# ==========================
-# SEARCH INSTALLED APPS
-# ==========================
-
-$AppResults =
-Get-StartApps |
-Where-Object {
-
-    $_.Name -like "*$query*"
-
-}
-
-foreach(
-    $app in $AppResults
-)
-{
-
-$result =
-New-SearchResult `
--Name $app.Name `
--Path "shell:AppsFolder\$($app.AppID)" `
--Type "Application"
-
-$SearchResults.Add(
-    $result
-) | Out-Null
-
-}
-
-$SearchResults =
-$SearchResults |
-Select-Object -First 25
-
-return $SearchResults
-
+    $AppResults = Get-StartApps | Where-Object {
+        $_.Name -like "*$query*"
+    }
+    foreach($app in $AppResults) {
+        $result = New-SearchResult -Name $app.Name -Path "shell:AppsFolder\$($app.AppID)" -Type "Application"
+        $SearchResults.Add($result) | Out-Null
+    }
+    $SearchResults = $SearchResults | Select-Object -First 25
+    return $SearchResults
 }

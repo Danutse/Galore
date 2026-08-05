@@ -21,39 +21,18 @@ $GaloreModuleManifest = [ordered]@{
 $script:StartupKeyName = "Program Manager"
 
 function Enable-ProgramStartup {
-
-    $exePath =
-    [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-
-    $startupValue =
-    '"' + $exePath + '"'
-
-    Set-ItemProperty `
-    -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" `
-    -Name $script:StartupKeyName `
-    -Value $startupValue
-
+    $exePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $startupValue = '"' + $exePath + '"'
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $script:StartupKeyName -Value $startupValue
 }
 
 function Disable-ProgramStartup {
-
-    Remove-ItemProperty `
-    -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" `
-    -Name $script:StartupKeyName `
-    -ErrorAction SilentlyContinue
-
+    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $script:StartupKeyName -ErrorAction SilentlyContinue
 }
 
 function Test-ProgramStartup {
-
-    $startup =
-    Get-ItemProperty `
-    -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" `
-    -Name $script:StartupKeyName `
-    -ErrorAction SilentlyContinue
-
+    $startup = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $script:StartupKeyName -ErrorAction SilentlyContinue
     return $null -ne $startup
-
 }
 
 # ============================================================
@@ -61,24 +40,10 @@ function Test-ProgramStartup {
 # ============================================================
 
 function Set-ProgramStartup {
-
-    param(
-        [bool]$Enabled
-    )
-
-    if(
-        $Enabled
-    )
-    {
-
+    param([bool]$Enabled)
+    if($Enabled) {
         Enable-ProgramStartup
-
-    }
-    else
-    {
-
+    } else {
         Disable-ProgramStartup
-
     }
-
 }

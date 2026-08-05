@@ -18,10 +18,7 @@ $GaloreModuleManifest = [ordered]@{
 # BRING PROGRAM WINDOW TO FRONT (FORCED)
 # ============================================================
 
-if(
-    -not ("WindowFocus" -as [type])
-)
-{
+if(-not ("WindowFocus" -as [type])) {
 Add-Type @"
 
 using System;
@@ -72,99 +69,31 @@ public class WindowFocus {
 }
 
 function Bring-ProgramToFront {
-
-param(
-    [string]$ProcessName
-)
-
-$process =
-Get-Process $ProcessName `
--ErrorAction SilentlyContinue |
-Where-Object {
-
-    $_.MainWindowHandle -ne 0
-
-} |
-Select-Object -First 1
-
-if(!$process)
-{
-
-    return
-
-}
-
-$handle =
-$process.MainWindowHandle
-
-if(
-    [WindowFocus]::IsIconic($handle)
-)
-{
-
-    [WindowFocus]::ShowWindow(
-        $handle,
-        9
-    )
-
-}
-
-$windowThread =
-[WindowFocus]::GetWindowThreadProcessId(
-    $handle,
-    [IntPtr]::Zero
-)
-
-$currentThread =
-[WindowFocus]::GetCurrentThreadId()
-
-$inputAttached = $false
-
-if(
-    $windowThread -ne $currentThread
-)
-{
-
-    $inputAttached =
-    [WindowFocus]::AttachThreadInput(
-        $currentThread,
-        $windowThread,
-        $true
-    )
-
-}
-
-try
-{
-
-    [WindowFocus]::ShowWindow(
-        $handle,
-        5
-    )
-
-    [WindowFocus]::SetForegroundWindow(
-        $handle
-    )
-
-}
-finally
-{
-
-    if(
-        $inputAttached
-    )
-    {
-
-        [WindowFocus]::AttachThreadInput(
-            $currentThread,
-            $windowThread,
-            $false
-        ) | Out-Null
-
+    param([string]$ProcessName)
+    $process = Get-Process $ProcessName -ErrorAction SilentlyContinue | Where-Object {
+        $_.MainWindowHandle -ne 0
+    } | Select-Object -First 1
+    if(!$process) {
+        return
     }
-
-}
-
+    $handle = $process.MainWindowHandle
+    if([WindowFocus]::IsIconic($handle)) {
+        [WindowFocus]::ShowWindow($handle, 9)
+    }
+    $windowThread = [WindowFocus]::GetWindowThreadProcessId($handle, [IntPtr]::Zero)
+    $currentThread = [WindowFocus]::GetCurrentThreadId()
+    $inputAttached = $false
+    if($windowThread -ne $currentThread) {
+        $inputAttached = [WindowFocus]::AttachThreadInput($currentThread, $windowThread, $true)
+    }
+    try {
+        [WindowFocus]::ShowWindow($handle, 5)
+        [WindowFocus]::SetForegroundWindow($handle)
+    } finally {
+        if($inputAttached) {
+            [WindowFocus]::AttachThreadInput($currentThread, $windowThread, $false) | Out-Null
+        }
+    }
 }
 
 # ============================================================
@@ -172,28 +101,11 @@ finally
 # ============================================================
 
 function Get-ProgramStatus {
-
-param(
-    [string]$ProcessName
-)
-
-$running =
-Get-Process `
-    -Name $ProcessName `
-    -ErrorAction SilentlyContinue
-
-if($running)
-{
-
-    return $true
-
-}
-
-else
-{
-
-    return $false
-
-}
-
+    param([string]$ProcessName)
+    $running = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue
+    if($running) {
+        return $true
+    } else {
+        return $false
+    }
 }

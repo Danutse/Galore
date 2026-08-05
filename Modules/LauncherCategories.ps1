@@ -18,7 +18,6 @@ $GaloreModuleManifest = [ordered]@{
     RequiresFiles = @()
     ProvidesTypes = @()
 }
-
 $script:GaloreCategoryState = $null
 $script:GaloreCategoryFile = $null
 $script:GaloreCategoryWindows = @{}
@@ -43,8 +42,7 @@ function Save-GaloreCategoryState {
         try {
             [IO.File]::WriteAllText($temporaryFile, ($script:GaloreCategoryState | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding($false)))
             Move-Item -LiteralPath $temporaryFile -Destination $script:GaloreCategoryFile -Force
-        }
-        catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to save Galore categories." }
+        } catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to save Galore categories." }
         finally { Remove-Item -LiteralPath $temporaryFile -Force -ErrorAction SilentlyContinue }
     }
 }
@@ -69,8 +67,7 @@ function Initialize-GaloreCategoryState {
                     $slot.Selected = [bool]$savedSlot.Selected
                 }
             }
-        }
-        catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to load Galore categories; default categories were restored." }
+        } catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to load Galore categories; default categories were restored." }
     }
     $script:GaloreCategoryState = $state
     Save-GaloreCategoryState
@@ -123,8 +120,7 @@ function Set-GaloreCategorySlot {
         if(-not $Check.IsDisposed) { $Check.Checked = $true }
         Update-GaloreCategoryMaster -Category $Category -Master $Master
         Save-GaloreCategoryState
-    }
-    catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to configure category slot '$($Slot.Id)'." }
+    } catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to configure category slot '$($Slot.Id)'." }
     finally { $Window.Tag.IsSelecting = $false; $dialog.Dispose() }
 }
 

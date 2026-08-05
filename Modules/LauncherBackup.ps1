@@ -48,8 +48,7 @@ function Export-GaloreSettingsBackup {
         finally { if($archive) { $archive.Dispose() } }
         [System.Windows.Forms.MessageBox]::Show("Galore settings backup created successfully.", "Galore Launcher", "OK", "Information") | Out-Null
         return $dialog.FileName
-    }
-    catch {
+    } catch {
         Write-LauncherDiagnostic -Exception $_ -Context "Failed to create a Galore settings backup."
         [System.Windows.Forms.MessageBox]::Show("Galore could not create the settings backup.", "Galore Launcher", "OK", "Error") | Out-Null
         return $null

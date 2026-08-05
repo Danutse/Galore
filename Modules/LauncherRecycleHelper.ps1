@@ -18,15 +18,8 @@ $GaloreModuleManifest = [ordered]@{
 # OLE RECYCLE DROP HELPER
 # ============================================================
 
-if(
-    -not (
-        "GaloreDropHelper.Exports" -as [type]
-    )
-)
-{
-
-    Add-Type `
-    -ReferencedAssemblies System.Windows.Forms.dll `
+if(-not ("GaloreDropHelper.Exports" -as [type])) {
+    Add-Type -ReferencedAssemblies System.Windows.Forms.dll `
     -TypeDefinition @"
 
 using System;

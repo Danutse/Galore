@@ -82,13 +82,11 @@ function Invoke-GaloreHotkeyCaptureInput {
         Resume-GaloreHotkeys | Out-Null
         $StatusLabel.Text = "Shortcut capture cancelled."
         $StatusLabel.ForeColor = [System.Drawing.Color]::Gainsboro
-    }
-    elseif($Event.KeyCode -eq [System.Windows.Forms.Keys]::Back) {
+    } elseif($Event.KeyCode -eq [System.Windows.Forms.Keys]::Back) {
         if(-not $CaptureState.Pending.ContainsKey($field.Tag)) {
             $StatusLabel.Text = "Press a shortcut combination first."
             $StatusLabel.ForeColor = [System.Drawing.Color]::Gold
-        }
-        elseif(Save-GalorePendingHotkeys -StatusLabel $StatusLabel -CaptureState $CaptureState) {
+        } elseif(Save-GalorePendingHotkeys -StatusLabel $StatusLabel -CaptureState $CaptureState) {
             $CaptureState.Field = $null
             $StatusLabel.Text = "Shortcut applied and saved."
             $StatusLabel.ForeColor = [System.Drawing.Color]::LightGreen
@@ -101,8 +99,7 @@ function Invoke-GaloreHotkeyCaptureInput {
             $field.Text = $candidate.DisplayText
             $StatusLabel.Text = "Backspace or Close saves $($candidate.DisplayText)."
             $StatusLabel.ForeColor = [System.Drawing.Color]::Gold
-        }
-        elseif($Event.KeyCode -notin @([System.Windows.Forms.Keys]::ControlKey, [System.Windows.Forms.Keys]::ShiftKey, [System.Windows.Forms.Keys]::Menu)) {
+        } elseif($Event.KeyCode -notin @([System.Windows.Forms.Keys]::ControlKey, [System.Windows.Forms.Keys]::ShiftKey, [System.Windows.Forms.Keys]::Menu)) {
             $StatusLabel.Text = "Use Ctrl, Alt, or Shift with another key."
             $StatusLabel.ForeColor = [System.Drawing.Color]::Salmon
         }

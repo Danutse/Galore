@@ -21,143 +21,64 @@ $GaloreModuleManifest = [ordered]@{
     RequiresFiles = @()
     ProvidesTypes = @()
 }
-
 $script:GaloreSystemToolPopup = $null
 
 function Get-GaloreNetworkConnection {
-
-    try
-    {
-        $profile =
-        Get-NetConnectionProfile `
-        -ErrorAction Stop |
-        Where-Object {
-            $_.IPv4Connectivity -ne "Disconnected" -or
-            $_.IPv6Connectivity -ne "Disconnected"
-        } |
-        Select-Object `
-        -First 1
-
-        if($null -eq $profile)
-        {
+    try {
+        $profile = Get-NetConnectionProfile -ErrorAction Stop | Where-Object {
+            $_.IPv4Connectivity -ne "Disconnected" -or $_.IPv6Connectivity -ne "Disconnected"
+        } | Select-Object -First 1
+        if($null -eq $profile) {
             return $null
         }
-
-        $connectionType =
-        if(
-            $profile.InterfaceAlias -match "Wi-?Fi|Wireless|WLAN"
-        )
-        {
+        $connectionType = if($profile.InterfaceAlias -match "Wi-?Fi|Wireless|WLAN") {
             "WiFi"
-        }
-        else
-        {
+        } else {
             "Ethernet"
         }
-
         return [pscustomobject]@{
             Name = $profile.Name
             InterfaceAlias = $profile.InterfaceAlias
             InterfaceIndex = $profile.InterfaceIndex
             Type = $connectionType
         }
-
-    }
-    catch
-    {
-
+    } catch {
         return $null
-
     }
-
 }
 
 function Get-GaloreNetworkToolTip {
-
-    $connection =
-    Get-GaloreNetworkConnection
-
-    if($null -eq $connection)
-    {
+    $connection = Get-GaloreNetworkConnection
+    if($null -eq $connection) {
         return "Internet: Not connected"
     }
-
-    return (
-        "Internet: " +
-        "$($connection.Name) ($($connection.Type))"
-    )
-
+    return ("Internet: " + "$($connection.Name) ($($connection.Type))")
 }
 
 function Invoke-GaloreNetworkRetry {
-
-    $connection =
-    Get-GaloreNetworkConnection
-
-    if($null -eq $connection)
-    {
+    $connection = Get-GaloreNetworkConnection
+    if($null -eq $connection) {
         return
     }
-
-    $confirmation =
-    [System.Windows.Forms.MessageBox]::Show(
-        "Disconnect and retry '$($connection.Name)'?",
-        "Galore Internet",
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Question
-    )
-
-    if(
-        $confirmation -ne
-        [System.Windows.Forms.DialogResult]::Yes
-    )
-    {
+    $confirmation = [System.Windows.Forms.MessageBox]::Show("Disconnect and retry '$($connection.Name)'?", "Galore Internet", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+    if($confirmation -ne [System.Windows.Forms.DialogResult]::Yes) {
         return
     }
-
-    try
-    {
-        if($connection.Type -eq "WiFi")
-        {
-            Start-Process `
-            -FilePath "netsh.exe" `
-            -ArgumentList "wlan disconnect interface=`"$($connection.InterfaceAlias)`"" `
-            -WindowStyle Hidden `
-            -Wait
-
-            Start-Process `
-            -FilePath "netsh.exe" `
-            -ArgumentList "wlan connect name=`"$($connection.Name)`" interface=`"$($connection.InterfaceAlias)`"" `
-            -WindowStyle Hidden
-
-        }
-        else
-        {
+    try {
+        if($connection.Type -eq "WiFi") {
+            Start-Process -FilePath "netsh.exe" -ArgumentList "wlan disconnect interface=`"$($connection.InterfaceAlias)`"" -WindowStyle Hidden -Wait
+            Start-Process -FilePath "netsh.exe" -ArgumentList "wlan connect name=`"$($connection.Name)`" interface=`"$($connection.InterfaceAlias)`"" -WindowStyle Hidden
+        } else {
             $command = "Disable-NetAdapter -InterfaceIndex $($connection.InterfaceIndex) -Confirm:`$false; Start-Sleep -Seconds 1; Enable-NetAdapter -InterfaceIndex $($connection.InterfaceIndex) -Confirm:`$false"
-
-            Start-Process `
-            -FilePath "powershell.exe" `
-            -ArgumentList "-NoProfile -WindowStyle Hidden -Command `"$command`"" `
-            -Verb RunAs
-
+            Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -WindowStyle Hidden -Command `"$command`"" -Verb RunAs
         }
-
+    } catch {
+        Write-LauncherDiagnostic -Exception $_ -Context "Failed to retry the active network connection."
     }
-    catch
-    {
-
-        Write-LauncherDiagnostic `
-        -Exception $_ `
-        -Context "Failed to retry the active network connection."
-
-    }
-
 }
 
 function Initialize-GaloreAudioApi {
-
-    if("GaloreAudio.EndpointVolume" -as [type])
-    {
+    if("GaloreAudio.EndpointVolume" -as [type]) {
         return
     }
     Add-Type @"
@@ -239,113 +160,65 @@ namespace GaloreAudio
 }
 
 function Get-GaloreMasterVolume {
-
-    try
-    {
+    try {
         Initialize-GaloreAudioApi
-
-        return [int][Math]::Round(
-            ([GaloreAudio.EndpointVolume]::GetMasterVolume() * 100)
-        )
-    }
-    catch
-    {
-
+        return [int][Math]::Round(([GaloreAudio.EndpointVolume]::GetMasterVolume() * 100))
+    } catch {
         return 0
-
     }
-
 }
 
 function Set-GaloreMasterVolume {
-
-    param(
-        [int]$Volume
-    )
-
-    try
-    {
+    param([int]$Volume)
+    try {
         Initialize-GaloreAudioApi
-
-        [GaloreAudio.EndpointVolume]::SetMasterVolume(
-            ([Math]::Max(0, [Math]::Min(100, $Volume)) / 100.0)
-        )
+        [GaloreAudio.EndpointVolume]::SetMasterVolume(([Math]::Max(0, [Math]::Min(100, $Volume)) / 100.0))
+    } catch {
+        Write-LauncherDiagnostic -Exception $_ -Context "Failed to set the master volume."
     }
-    catch
-    {
-
-        Write-LauncherDiagnostic `
-        -Exception $_ `
-        -Context "Failed to set the master volume."
-
-    }
-
 }
 
 function New-GaloreSystemToolPopup {
-
-    param(
-        $Anchor,
-        [string]$BackgroundImageName,
-        [int]$FallbackWidth,
-        [int]$FallbackHeight
-    )
-
-    $popup =
-    New-Object System.Windows.Forms.Form
-
+    param($Anchor, [string]$BackgroundImageName, [int]$FallbackWidth, [int]$FallbackHeight)
+    $popup = New-Object System.Windows.Forms.Form
     $popup.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
     $popup.ShowInTaskbar = $false
     $popup.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
     $popup.TopMost = $true
     $popup.BackColor = [System.Drawing.Color]::Black
-
     $ownedImage = $null
     $imagePath = Get-GaloreResourcePath $BackgroundImageName
-
-    if(Test-Path -LiteralPath $imagePath -PathType Leaf)
-    {
-        try
-        {
+    if(Test-Path -LiteralPath $imagePath -PathType Leaf) {
+        try {
             $sourceImage = [System.Drawing.Image]::FromFile($imagePath)
             $ownedImage = New-Object System.Drawing.Bitmap($sourceImage)
             $sourceImage.Dispose()
             $popup.BackgroundImage = $ownedImage
             $popup.BackgroundImageLayout = [System.Windows.Forms.ImageLayout]::None
             $popup.ClientSize = [System.Drawing.Size]::new($ownedImage.Width, $ownedImage.Height)
-        }
-        catch
-        {
+        } catch {
             Write-LauncherDiagnostic -Exception $_ -Context "Failed to load '$BackgroundImageName'."
         }
     }
-
-    if($null -eq $ownedImage)
-    {
+    if($null -eq $ownedImage) {
         $popup.ClientSize = [System.Drawing.Size]::new($FallbackWidth, $FallbackHeight)
     }
-
     $popup.Tag = [pscustomobject]@{ SelectorImage = $ownedImage; FadeTimer = $null; IsClosing = $false }
-
     $popup.Add_FormClosing({
         param($sender, $e)
-        if(-not $this.Tag.IsClosing)
-        {
+        if(-not $this.Tag.IsClosing) {
             $e.Cancel = $true
             Close-GaloreBrowserSelectorAnimated -Form $this
         }
     })
-
     $popup.Add_FormClosed({
         $context = $this.Tag
         if($context.SelectorImage) { $context.SelectorImage.Dispose() }
         if($script:GaloreSystemToolPopup -eq $this) { $script:GaloreSystemToolPopup = $null }
     })
-
     $popup.Add_Deactivate({
         if(-not $this.IsDisposed) { Close-GaloreBrowserSelectorAnimated -Form $this }
     })
-
     $anchorPoint = $Anchor.PointToScreen([System.Drawing.Point]::Empty)
     $area = [System.Windows.Forms.Screen]::FromPoint($anchorPoint).WorkingArea
     $x = [Math]::Min([Math]::Max($area.Left, $anchorPoint.X), $area.Right - $popup.Width)
@@ -353,111 +226,54 @@ function New-GaloreSystemToolPopup {
     if($y -lt $area.Top) { $y = [Math]::Min($area.Bottom - $popup.Height, $anchorPoint.Y + $Anchor.Height + 2) }
     $popup.Location = [System.Drawing.Point]::new($x, $y)
     return $popup
-
 }
 
 function Show-GaloreSystemToolPopup {
-
     param($Popup, $Owner)
-
-    if($script:GaloreSystemToolPopup -and -not $script:GaloreSystemToolPopup.IsDisposed)
-    {
+    if($script:GaloreSystemToolPopup -and -not $script:GaloreSystemToolPopup.IsDisposed) {
         Close-GaloreBrowserSelectorAnimated -Form $script:GaloreSystemToolPopup
     }
-
     $script:GaloreSystemToolPopup = $Popup
     $Popup.Opacity = 0
-    if(
-        $Owner -and
-        -not $Owner.IsDisposed
-    )
-    {
-
+    if($Owner -and -not $Owner.IsDisposed) {
         $Popup.Show($Owner)
-
-    }
-    else
-    {
-
+    } else {
         $Popup.Show()
-
     }
-
     Start-GaloreBrowserSelectorFade -Form $Popup -TargetOpacity 1
-
 }
 
 function Show-GaloreVolumePopup {
-
     param($Anchor)
-
     $popup = New-GaloreSystemToolPopup -Anchor $Anchor -BackgroundImageName "volumeselector.png" -FallbackWidth 250 -FallbackHeight 75
-
     $slider = New-Object System.Windows.Forms.TrackBar
     $slider.Minimum = 0
     $slider.Maximum = 100
     $slider.TickStyle = [System.Windows.Forms.TickStyle]::None
     $slider.Value = Get-GaloreMasterVolume
     $sliderHeight = 45
-    $slider.Bounds = [System.Drawing.Rectangle]::new(
-        15,
-        [Math]::Max(0, [int](($popup.ClientSize.Height - $sliderHeight) / 2)),
-        $popup.ClientSize.Width - 30,
-        $sliderHeight
-    )
+    $slider.Bounds = [System.Drawing.Rectangle]::new(15, [Math]::Max(0, [int](($popup.ClientSize.Height - $sliderHeight) / 2)), $popup.ClientSize.Width - 30, $sliderHeight)
     $slider.Add_Scroll({ Set-GaloreMasterVolume -Volume $this.Value })
-
     $popup.Controls.Add($slider)
     Show-GaloreSystemToolPopup -Popup $popup -Owner $Anchor.FindForm()
-
 }
 
 function Show-GaloreKeyboardLanguagePopup {
-
     param($Anchor)
-
     $popup = New-GaloreSystemToolPopup -Anchor $Anchor -BackgroundImageName "keyboardselector.png" -FallbackWidth 260 -FallbackHeight 180
     $languages = @([System.Windows.Forms.InputLanguage]::InstalledInputLanguages)
     $languageList = New-Object System.Windows.Forms.Panel
     $languageList.AutoScroll = $true
     $languageList.BackColor = [System.Drawing.Color]::Transparent
-    $languageList.Bounds = [System.Drawing.Rectangle]::new(
-        15,
-        15,
-        $popup.ClientSize.Width - 30,
-        $popup.ClientSize.Height - 30
-    )
-
+    $languageList.Bounds = [System.Drawing.Rectangle]::new(15, 15, $popup.ClientSize.Width - 30, $popup.ClientSize.Height - 30)
     $languageList.Add_MouseWheel({
         param($sender, $e)
-
-        $maximum =
-        [Math]::Max(
-            0,
-            $sender.VerticalScroll.Maximum -
-            $sender.VerticalScroll.LargeChange +
-            1
-        )
-
-        $target =
-        [Math]::Max(
-            0,
-            [Math]::Min(
-                $maximum,
-                $sender.VerticalScroll.Value - $e.Delta
-            )
-        )
-
-        $sender.AutoScrollPosition =
-        New-Object System.Drawing.Point(
-            0,
-            $target
-        )
+        $maximum = [Math]::Max(0, $sender.VerticalScroll.Maximum - $sender.VerticalScroll.LargeChange + 1)
+        $target = [Math]::Max(0, [Math]::Min($maximum, $sender.VerticalScroll.Value - $e.Delta))
+        $sender.AutoScrollPosition = New-Object System.Drawing.Point(0, $target)
     })
-
     $top = 0
-    foreach($language in $languages)
-    {
+    foreach($language in $languages) {
         $choice = New-Object System.Windows.Forms.Label
         $choice.Text = $language.Culture.DisplayName
         $choice.Tag = $language
@@ -470,51 +286,24 @@ function Show-GaloreKeyboardLanguagePopup {
         $choice.Add_MouseLeave({ $this.ForeColor = [System.Drawing.Color]::White })
         $choice.Add_MouseWheel({
             param($sender, $e)
-
-            $list =
-            $sender.Parent
-
-            $maximum =
-            [Math]::Max(
-                0,
-                $list.VerticalScroll.Maximum -
-                $list.VerticalScroll.LargeChange +
-                1
-            )
-
-            $target =
-            [Math]::Max(
-                0,
-                [Math]::Min(
-                    $maximum,
-                    $list.VerticalScroll.Value - $e.Delta
-                )
-            )
-
-            $list.AutoScrollPosition =
-            New-Object System.Drawing.Point(
-                0,
-                $target
-            )
+            $list = $sender.Parent
+            $maximum = [Math]::Max(0, $list.VerticalScroll.Maximum - $list.VerticalScroll.LargeChange + 1)
+            $target = [Math]::Max(0, [Math]::Min($maximum, $list.VerticalScroll.Value - $e.Delta))
+            $list.AutoScrollPosition = New-Object System.Drawing.Point(0, $target)
         })
         $choice.Add_Click({ [System.Windows.Forms.InputLanguage]::CurrentInputLanguage = $this.Tag; Close-GaloreBrowserSelectorAnimated -Form $this.FindForm() })
         $languageList.Controls.Add($choice)
         $top += 30
     }
-
     $popup.Controls.Add($languageList)
     Show-GaloreSystemToolPopup -Popup $popup -Owner $Anchor.FindForm()
-
 }
 
 function Initialize-GaloreSystemTools {
-
     param([System.Windows.Forms.Form]$Form)
-
     $toolTip = New-Object System.Windows.Forms.ToolTip
     $toolTip.InitialDelay = 400
     $toolTip.AutoPopDelay = 5000
-
     $internetButton = New-InternetButton
     $internetButton.Add_MouseEnter({
         param($sender, $e)
@@ -525,7 +314,6 @@ function Initialize-GaloreSystemTools {
         Invoke-GaloreNetworkRetry
     })
     $Form.Controls.Add($internetButton)
-
     $volumeButton = New-VolumeButton
     $volumeButton.Add_Click({
         param($sender, $e)
@@ -533,7 +321,6 @@ function Initialize-GaloreSystemTools {
     })
     $toolTip.SetToolTip($volumeButton, "Volume")
     $Form.Controls.Add($volumeButton)
-
     $keyboardButton = New-KeyboardLanguageButton
     $keyboardButton.Add_MouseEnter({
         param($sender, $e)
@@ -544,13 +331,10 @@ function Initialize-GaloreSystemTools {
         Show-GaloreKeyboardLanguagePopup -Anchor $sender
     })
     $Form.Controls.Add($keyboardButton)
-
     $calculatorButton = New-CalculatorButton
     $calculatorButton.Add_Click({
-        Start-Process `
-        -FilePath "calc.exe"
+        Start-Process -FilePath "calc.exe"
     })
     $toolTip.SetToolTip($calculatorButton, "Calculator")
     $Form.Controls.Add($calculatorButton)
-
 }

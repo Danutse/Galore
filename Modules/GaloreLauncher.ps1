@@ -2,39 +2,15 @@
 # APPLICATION ROOT PATH
 # ============================================================
 
-$script:LauncherRunningAsScript =
-$MyInvocation.MyCommand.CommandType -eq "ExternalScript"
-
-if(
-    $script:LauncherRunningAsScript
-)
-{
-
+$script:LauncherRunningAsScript = $MyInvocation.MyCommand.CommandType -eq "ExternalScript"
+if($script:LauncherRunningAsScript) {
     $ModuleRoot = $PSScriptRoot
-
-    $AppRoot =
-    Split-Path `
-    $ModuleRoot `
-    -Parent
-
+    $AppRoot = Split-Path $ModuleRoot -Parent
+} else {
+    $AppRoot = Split-Path ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) -Parent
+    $ModuleRoot = Join-Path $AppRoot "Modules"
 }
-else
-{
-
-    $AppRoot =
-    Split-Path `
-    ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) `
-    -Parent
-
-    $ModuleRoot =
-    Join-Path `
-    $AppRoot `
-    "Modules"
-
-}
-
-$OutputEncoding =
-[System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 # ============================================================
 # EMBEDDED RELEASE RESOURCES
@@ -58,7 +34,6 @@ function Initialize-GaloreResourceStore {
     }
     return $cacheRoot
 }
-
 $script:GaloreResourceRoot = Initialize-GaloreResourceStore
 
 function Get-GaloreResourcePath {
@@ -72,127 +47,51 @@ function Get-GaloreResourcePath {
 # EMBEDDED RELEASE MODULES
 # ============================================================
 
-$script:GaloreUseEmbeddedModules =
-$script:GaloreEmbeddedModuleSources -is [System.Collections.IDictionary] -and
-$script:GaloreEmbeddedModuleSources.Count -gt 0
+$script:GaloreUseEmbeddedModules = $script:GaloreEmbeddedModuleSources -is [System.Collections.IDictionary] -and $script:GaloreEmbeddedModuleSources.Count -gt 0
 
 function Get-GaloreModuleSource {
-
     param([string]$FileName)
-
-    if($script:GaloreUseEmbeddedModules)
-    {
-
-        if(-not $script:GaloreEmbeddedModuleSources.Contains($FileName))
-        {
-
+    if($script:GaloreUseEmbeddedModules) {
+        if(-not $script:GaloreEmbeddedModuleSources.Contains($FileName)) {
             throw "$FileName is missing from the embedded Galore release."
-
         }
-
         return [string]$script:GaloreEmbeddedModuleSources[$FileName]
-
     }
-
-    $modulePath =
-    Join-Path `
-    $ModuleRoot `
-    $FileName
-
-    if(-not (Test-Path -LiteralPath $modulePath -PathType Leaf))
-    {
-
+    $modulePath = Join-Path $ModuleRoot $FileName
+    if(-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
         throw "$FileName missing: $modulePath"
-
     }
-
-    return Get-Content `
-    -LiteralPath $modulePath `
-    -Raw `
-    -ErrorAction Stop
-
+    return Get-Content -LiteralPath $modulePath -Raw -ErrorAction Stop
 }
 
 function Publish-GaloreModuleFunctions {
-
-    param(
-        [string]$ModuleSource
+    param([string]$ModuleSource)
+    $functionNames = @(
+        [regex]::Matches($ModuleSource, '(?m)^\s*function\s+([A-Za-z][A-Za-z0-9_-]*)') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
     )
-
-    $functionNames =
-    @(
-        [regex]::Matches(
-            $ModuleSource,
-            '(?m)^\s*function\s+([A-Za-z][A-Za-z0-9_-]*)'
-        ) |
-        ForEach-Object { $_.Groups[1].Value } |
-        Sort-Object -Unique
-    )
-
-    foreach($functionName in $functionNames)
-    {
-        $functionCommand =
-        Get-Command `
-        -Name $functionName `
-        -CommandType Function `
-        -ErrorAction Stop
-
-        Set-Item `
-        -Path ("Function:global:{0}" -f $functionName) `
-        -Value $functionCommand.ScriptBlock `
-        -Force
+    foreach($functionName in $functionNames) {
+        $functionCommand = Get-Command -Name $functionName -CommandType Function -ErrorAction Stop
+        Set-Item -Path ("Function:global:{0}" -f $functionName) -Value $functionCommand.ScriptBlock -Force
     }
-
 }
 
 # ============================================================
 # LOGGING BOOTSTRAP
 # ============================================================
 
-try
-{
-    $LauncherLoggingModuleSource =
-    Get-GaloreModuleSource `
-    -FileName "LauncherLogging.ps1"
-
+try {
+    $LauncherLoggingModuleSource = Get-GaloreModuleSource -FileName "LauncherLogging.ps1"
     . ([scriptblock]::Create($LauncherLoggingModuleSource))
-
-    Publish-GaloreModuleFunctions `
-    -ModuleSource $LauncherLoggingModuleSource
-
+    Publish-GaloreModuleFunctions -ModuleSource $LauncherLoggingModuleSource
     $script:GaloreBootstrapLoggingManifest = $GaloreModuleManifest
-
-    Write-GaloreLog `
-    -Level "INFO" `
-    -Component "Startup" `
-    -Message "Galore logging subsystem initialized."
-
-}
-catch
-{
-
-    try
-    {
-
-        Add-Type `
-        -AssemblyName System.Windows.Forms `
-        -ErrorAction Stop
-
-        [System.Windows.Forms.MessageBox]::Show(
-            "Galore Launcher could not start its logging subsystem. $($_.Exception.Message)",
-            "Galore Launcher - Startup Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-
+    Write-GaloreLog -Level "INFO" -Component "Startup" -Message "Galore logging subsystem initialized."
+} catch {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        [System.Windows.Forms.MessageBox]::Show("Galore Launcher could not start its logging subsystem. $($_.Exception.Message)", "Galore Launcher - Startup Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+    } catch {
     }
-    catch
-    {
-
-    }
-
     throw
-
 }
 
 # ============================================================
@@ -200,7 +99,6 @@ catch
 # ============================================================
 
 $script:LauncherInstanceMutex = $null
-
 $script:LauncherInstanceMutexOwned = $false
 
 # ============================================================
@@ -208,97 +106,40 @@ $script:LauncherInstanceMutexOwned = $false
 # ============================================================
 
 function Stop-LauncherSingleInstance {
-
-    if(
-        $null -eq $script:LauncherInstanceMutex
-    )
-    {
-
+    if($null -eq $script:LauncherInstanceMutex) {
         return
-
     }
-
-    if(
-        $script:LauncherInstanceMutexOwned
-    )
-    {
-
-        try
-        {
-
+    if($script:LauncherInstanceMutexOwned) {
+        try {
             $script:LauncherInstanceMutex.ReleaseMutex()
-
+        } catch {
         }
-        catch
-        {
-
-        }
-
     }
-
-    try
-    {
-
+    try {
         $script:LauncherInstanceMutex.Dispose()
-
+    } catch {
     }
-    catch
-    {
-
-    }
-
     $script:LauncherInstanceMutex = $null
-
     $script:LauncherInstanceMutexOwned = $false
-
 }
 
 # ============================================================
 # GLOBAL ERROR HANDLER
 # ============================================================
 
-trap
-{
-
-    try
-    {
-
-        Write-LauncherLog `
-        -Exception $_ `
-        -Context "Unhandled launcher error."
-
-    }
-    finally
-    {
-
-        if(
-            Get-Command `
-            -Name Stop-LauncherRuntimeResources `
-            -CommandType Function `
-            -ErrorAction SilentlyContinue
-        )
-        {
-
-            try
-            {
-
-                Stop-LauncherRuntimeResources `
-                -Form $script:LauncherForm
-
+trap {
+    try {
+        Write-LauncherLog -Exception $_ -Context "Unhandled launcher error."
+    } finally {
+        if(Get-Command -Name Stop-LauncherRuntimeResources -CommandType Function -ErrorAction SilentlyContinue) {
+            try {
+                Stop-LauncherRuntimeResources -Form $script:LauncherForm
+            } catch {
             }
-            catch
-            {
-
-            }
-
         }
-
         Stop-LauncherSingleInstance
-
     }
-
     break
-
 }
 
 # ============================================================
@@ -306,71 +147,28 @@ trap
 # ============================================================
 
 function Initialize-LauncherSingleInstance {
-
     $mutexName = "Local\GaloreLauncher.SingleInstance.4F5F915C-F01B-4E8F-A5CA-9195137D789B"
-
-    try
-    {
-
-        $script:LauncherInstanceMutex =
-        New-Object System.Threading.Mutex(
-            $false,
-            $mutexName
-        )
-
-        try
-        {
-
-            $script:LauncherInstanceMutexOwned =
-            $script:LauncherInstanceMutex.WaitOne(
-                0,
-                $false
-            )
-
-        }
-        catch [System.Threading.AbandonedMutexException]
-        {
-
+    try {
+        $script:LauncherInstanceMutex = New-Object System.Threading.Mutex($false, $mutexName)
+        try {
+            $script:LauncherInstanceMutexOwned = $script:LauncherInstanceMutex.WaitOne(0, $false)
+        } catch [System.Threading.AbandonedMutexException] {
             $script:LauncherInstanceMutexOwned = $true
-
         }
-
-        if(
-            -not $script:LauncherInstanceMutexOwned
-        )
-        {
-
+        if(-not $script:LauncherInstanceMutexOwned) {
             $script:LauncherInstanceMutex.Dispose()
-
             $script:LauncherInstanceMutex = $null
-
             return $false
-
         }
-
         return $true
-
-    }
-    catch
-    {
-
-        if(
-            $script:LauncherInstanceMutex
-        )
-        {
-
+    } catch {
+        if($script:LauncherInstanceMutex) {
             $script:LauncherInstanceMutex.Dispose()
-
             $script:LauncherInstanceMutex = $null
-
         }
-
         $script:LauncherInstanceMutexOwned = $false
-
         throw
-
     }
-
 }
 
 # ============================================================
@@ -378,62 +176,22 @@ function Initialize-LauncherSingleInstance {
 # ============================================================
 
 function Show-LauncherAlreadyRunningMessage {
-
     $message = "Galore Launcher is already running"
-
-    if(
-        $script:LauncherRunningAsScript
-    )
-    {
-
-        try
-        {
-
-            Write-Host `
-            $message `
-            -ForegroundColor Yellow
-
+    if($script:LauncherRunningAsScript) {
+        try {
+            Write-Host $message -ForegroundColor Yellow
+        } catch {
         }
-        catch
-        {
-
-        }
-
     }
-
-    try
-    {
-
-        Add-Type `
-        -AssemblyName System.Windows.Forms `
-        -ErrorAction Stop
-
-        [System.Windows.Forms.MessageBox]::Show(
-            $message,
-            "Galore Launcher",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Information
-        ) | Out-Null
-
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        [System.Windows.Forms.MessageBox]::Show($message, "Galore Launcher", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+    } catch {
     }
-    catch
-    {
-
-    }
-
 }
-
-if(
-    -not (
-        Initialize-LauncherSingleInstance
-    )
-)
-{
-
+if(-not (Initialize-LauncherSingleInstance)) {
     Show-LauncherAlreadyRunningMessage
-
     return
-
 }
 
 # ============================================================
@@ -441,146 +199,50 @@ if(
 # ============================================================
 
 function Test-GaloreModuleDependencies {
-
-param(
-    [object[]]$LoadedModules,
-    [string]$ModuleRoot,
-    [string]$AppRoot,
-    [switch]$RuntimeVariablesOnly
-)
-
-$errors =
-New-Object System.Collections.ArrayList
-
-$moduleByName =
-@{}
-
-foreach(
-    $loadedModule in $LoadedModules
-)
-{
-
-    $manifest =
-    $loadedModule.Manifest
-
-    if(
-        -not ($manifest -is [System.Collections.IDictionary]) -or
-        -not $manifest.Contains("Name") -or
-        [string]::IsNullOrWhiteSpace([string]$manifest.Name)
-    )
-    {
-
-        if(
-            -not $RuntimeVariablesOnly
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "$($loadedModule.FileName) has an invalid or missing manifest Name."
-            )
-
-        }
-
-        continue
-
-    }
-
-    $moduleName =
-    [string]$manifest.Name
-
-    if(
-        $moduleByName.ContainsKey($moduleName)
-    )
-    {
-
-        if(
-            -not $RuntimeVariablesOnly
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "Module manifest Name '$moduleName' is declared more than once."
-            )
-
-        }
-
-    }
-    else
-    {
-
-        $moduleByName[$moduleName] =
-        $loadedModule
-
-    }
-
-}
-
-if(
-    $RuntimeVariablesOnly
-)
-{
-
-    foreach(
-        $loadedModule in $LoadedModules
-    )
-    {
-
-        $manifest =
-        $loadedModule.Manifest
-
-        if(
-            -not ($manifest -is [System.Collections.IDictionary]) -or
-            -not $manifest.Contains("RequiresVariables")
-        )
-        {
-
-            continue
-
-        }
-
-        foreach(
-            $variableName in @($manifest.RequiresVariables)
-        )
-        {
-
-            $runtimeVariable =
-            Get-Variable `
-            -Name $variableName `
-            -Scope Script `
-            -ErrorAction SilentlyContinue
-
-            if(
-                $null -eq $runtimeVariable -or
-                $null -eq $runtimeVariable.Value
-            )
-            {
-
-                $null =
-                $errors.Add(
-                    "$($manifest.Name) requires runtime variable '$variableName', but it is unavailable."
-                )
-
+    param([object[]]$LoadedModules, [string]$ModuleRoot, [string]$AppRoot, [switch]$RuntimeVariablesOnly)
+    $errors = New-Object System.Collections.ArrayList
+    $moduleByName = @{}
+    foreach($loadedModule in $LoadedModules) {
+        $manifest = $loadedModule.Manifest
+        if(-not ($manifest -is [System.Collections.IDictionary]) -or -not $manifest.Contains("Name") -or [string]::IsNullOrWhiteSpace([string]$manifest.Name)) {
+            if(-not $RuntimeVariablesOnly) {
+                $null = $errors.Add("$($loadedModule.FileName) has an invalid or missing manifest Name.")
             }
-
+            continue
         }
-
+        $moduleName = [string]$manifest.Name
+        if($moduleByName.ContainsKey($moduleName)) {
+            if(-not $RuntimeVariablesOnly) {
+                $null = $errors.Add("Module manifest Name '$moduleName' is declared more than once.")
+            }
+        } else {
+            $moduleByName[$moduleName] = $loadedModule
+        }
     }
-
-    return [PSCustomObject]@{
-        IsValid = $errors.Count -eq 0
-        Errors = @($errors)
-        ModuleCount = $moduleByName.Count
-        FunctionCount = 0
-        RequiredTypeCount = 0
-        RequiredFileCount = 0
+    if($RuntimeVariablesOnly) {
+        foreach($loadedModule in $LoadedModules) {
+            $manifest = $loadedModule.Manifest
+            if(-not ($manifest -is [System.Collections.IDictionary]) -or -not $manifest.Contains("RequiresVariables")) {
+                continue
+            }
+            foreach($variableName in @($manifest.RequiresVariables)
+            ) {
+                $runtimeVariable = Get-Variable -Name $variableName -Scope Script -ErrorAction SilentlyContinue
+                if($null -eq $runtimeVariable -or $null -eq $runtimeVariable.Value) {
+                    $null = $errors.Add("$($manifest.Name) requires runtime variable '$variableName', but it is unavailable.")
+                }
+            }
+        }
+        return [PSCustomObject]@{
+            IsValid = $errors.Count -eq 0
+            Errors = @($errors)
+            ModuleCount = $moduleByName.Count
+            FunctionCount = 0
+            RequiredTypeCount = 0
+            RequiredFileCount = 0
+        }
     }
-
-}
-
-$requiredManifestProperties =
-@(
+    $requiredManifestProperties = @(
     "Name"
     "LoadOrder"
     "RequiresModules"
@@ -590,443 +252,144 @@ $requiredManifestProperties =
     "RequiresFolders"
     "RequiresFiles"
     "ProvidesTypes"
-)
-
-$functionOwners =
-@{}
-
-$typeProviders =
-@{}
-
-$requiredFiles =
-@{}
-
-$requiredTypes =
-@{}
-
-foreach(
-    $loadedModule in $LoadedModules
-)
-{
-
-    $manifest =
-    $loadedModule.Manifest
-
-    if(
-        -not ($manifest -is [System.Collections.IDictionary])
     )
-    {
-
-        $null =
-        $errors.Add(
-            "$($loadedModule.FileName) did not declare a dictionary manifest."
-        )
-
-        continue
-
-    }
-
-    $missingManifestProperties =
-    @(
-        $requiredManifestProperties |
-        Where-Object {
+    $functionOwners = @{}
+    $typeProviders = @{}
+    $requiredFiles = @{}
+    $requiredTypes = @{}
+    foreach($loadedModule in $LoadedModules) {
+        $manifest = $loadedModule.Manifest
+        if(-not ($manifest -is [System.Collections.IDictionary])) {
+            $null = $errors.Add("$($loadedModule.FileName) did not declare a dictionary manifest.")
+            continue
+        }
+        $missingManifestProperties = @(
+        $requiredManifestProperties | Where-Object {
             -not $manifest.Contains($_)
         }
-    )
-
-    if(
-        $missingManifestProperties.Count -gt 0
-    )
-    {
-
-        $null =
-        $errors.Add(
-            "$($loadedModule.FileName) manifest is missing: $($missingManifestProperties -join ', ')."
         )
-
-        continue
-
-    }
-
-    $moduleName =
-    [string]$manifest.Name
-
-    $expectedModuleName =
-    [System.IO.Path]::GetFileNameWithoutExtension(
-        $loadedModule.FileName
-    )
-
-    if(
-        $moduleName -cne $expectedModuleName
-    )
-    {
-
-        $null =
-        $errors.Add(
-            "$($loadedModule.FileName) declares Name '$moduleName'; expected '$expectedModuleName'."
-        )
-
-    }
-
-    $expectedLoadOrder =
-    $loadedModule.ActualOrder * 10
-
-    if(
-        $manifest.LoadOrder -ne $expectedLoadOrder
-    )
-    {
-
-        $null =
-        $errors.Add(
-            "$moduleName loaded at position $($loadedModule.ActualOrder), but its manifest requires order $($manifest.LoadOrder)."
-        )
-
-    }
-
-    if(
-        -not ($manifest.RequiresFunctions -is [System.Collections.IDictionary])
-    )
-    {
-
-        $null =
-        $errors.Add(
-            "$moduleName RequiresFunctions must be a dictionary."
-        )
-
-    }
-
-    if(
-        -not ($manifest.RequiresTypes -is [System.Collections.IDictionary])
-    )
-    {
-
-        $null =
-        $errors.Add(
-            "$moduleName RequiresTypes must be a dictionary."
-        )
-
-    }
-
-    foreach(
-        $providedType in @($manifest.ProvidesTypes)
-    )
-    {
-
-        if(
-            [string]::IsNullOrWhiteSpace([string]$providedType)
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "$moduleName declares an empty provided type."
-            )
-
+        if($missingManifestProperties.Count -gt 0) {
+            $null = $errors.Add("$($loadedModule.FileName) manifest is missing: $($missingManifestProperties -join ', ').")
             continue
-
         }
-
-        if(
-            $typeProviders.ContainsKey($providedType)
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "Type '$providedType' is provided by both $($typeProviders[$providedType]) and $moduleName."
-            )
-
+        $moduleName = [string]$manifest.Name
+        $expectedModuleName = [System.IO.Path]::GetFileNameWithoutExtension($loadedModule.FileName)
+        if($moduleName -cne $expectedModuleName) {
+            $null = $errors.Add("$($loadedModule.FileName) declares Name '$moduleName'; expected '$expectedModuleName'.")
         }
-        else
-        {
-
-            $typeProviders[$providedType] =
-            $moduleName
-
+        $expectedLoadOrder = $loadedModule.ActualOrder * 10
+        if($manifest.LoadOrder -ne $expectedLoadOrder) {
+            $null = $errors.Add("$moduleName loaded at position $($loadedModule.ActualOrder), but its manifest requires order $($manifest.LoadOrder).")
         }
-
-    }
-
-    foreach(
-        $requiredFolder in @($manifest.RequiresFolders)
-    )
-    {
-
-        $folderPath = if($requiredFolder -match '^(?i:resources)$' -and $script:GaloreResourceRoot) { $script:GaloreResourceRoot } else { Join-Path $AppRoot $requiredFolder }
-
-        if(
-            -not (
-                Test-Path `
-                -LiteralPath $folderPath `
-                -PathType Container
-            )
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "$moduleName requires folder '$requiredFolder', but it was not found."
-            )
-
+        if(-not ($manifest.RequiresFunctions -is [System.Collections.IDictionary])) {
+            $null = $errors.Add("$moduleName RequiresFunctions must be a dictionary.")
         }
-
-    }
-
-    foreach(
-        $requiredFile in @($manifest.RequiresFiles)
-    )
-    {
-
-        $requiredFiles[$requiredFile] =
-        $true
-
-        $filePath = if($requiredFile -match '^(?i:resources)[\\/](.+)$' -and (Get-Command -Name Get-GaloreResourcePath -ErrorAction SilentlyContinue)) { Get-GaloreResourcePath $Matches[1] } else { Join-Path $AppRoot $requiredFile }
-
-        if(
-            -not (
-                Test-Path `
-                -LiteralPath $filePath `
-                -PathType Leaf
-            )
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "$moduleName requires file '$requiredFile', but it was not found."
-            )
-
+        if(-not ($manifest.RequiresTypes -is [System.Collections.IDictionary])) {
+            $null = $errors.Add("$moduleName RequiresTypes must be a dictionary.")
         }
-
-    }
-
-    $tokens = $null
-
-    $parseErrors = $null
-
-    $moduleAst =
-    [System.Management.Automation.Language.Parser]::ParseInput(
-        [string]$loadedModule.Source,
-        $loadedModule.FileName,
-        [ref]$tokens,
-        [ref]$parseErrors
-    )
-
-    if(
-        $parseErrors.Count -gt 0
-    )
-    {
-
-        $null =
-        $errors.Add(
-            "$moduleName could not be inspected: $($parseErrors[0].Message)"
-        )
-
-        continue
-
-    }
-
-    foreach(
-        $functionAst in $moduleAst.FindAll(
-            {
+        foreach($providedType in @($manifest.ProvidesTypes)
+        ) {
+            if([string]::IsNullOrWhiteSpace([string]$providedType)) {
+                $null = $errors.Add("$moduleName declares an empty provided type.")
+                continue
+            }
+            if($typeProviders.ContainsKey($providedType)) {
+                $null = $errors.Add("Type '$providedType' is provided by both $($typeProviders[$providedType]) and $moduleName.")
+            } else {
+                $typeProviders[$providedType] = $moduleName
+            }
+        }
+        foreach($requiredFolder in @($manifest.RequiresFolders)
+        ) {
+            $folderPath = if($requiredFolder -match '^(?i:resources)$' -and $script:GaloreResourceRoot) { $script:GaloreResourceRoot } else { Join-Path $AppRoot $requiredFolder }
+            if(-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
+                $null = $errors.Add("$moduleName requires folder '$requiredFolder', but it was not found.")
+            }
+        }
+        foreach($requiredFile in @($manifest.RequiresFiles)
+        ) {
+            $requiredFiles[$requiredFile] = $true
+            $filePath = if($requiredFile -match '^(?i:resources)[\\/](.+)$' -and (Get-Command -Name Get-GaloreResourcePath -ErrorAction SilentlyContinue)) { Get-GaloreResourcePath $Matches[1] } else { Join-Path $AppRoot $requiredFile }
+            if(-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
+                $null = $errors.Add("$moduleName requires file '$requiredFile', but it was not found.")
+            }
+        }
+        $tokens = $null
+        $parseErrors = $null
+        $moduleAst = [System.Management.Automation.Language.Parser]::ParseInput([string]$loadedModule.Source, $loadedModule.FileName, [ref]$tokens, [ref]$parseErrors)
+        if($parseErrors.Count -gt 0) {
+            $null = $errors.Add("$moduleName could not be inspected: $($parseErrors[0].Message)")
+            continue
+        }
+        foreach($functionAst in $moduleAst.FindAll({
                 param($node)
                 $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
-            },
-            $true
+            }, $true
         )
-    )
-    {
-
-        $functionName =
-        $functionAst.Name
-
-        if(
-            $functionOwners.ContainsKey($functionName)
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "Function '$functionName' is declared by both $($functionOwners[$functionName]) and $moduleName."
-            )
-
-        }
-        else
-        {
-
-            $functionOwners[$functionName] =
-            $moduleName
-
-        }
-
-    }
-
-}
-
-foreach(
-    $loadedModule in $LoadedModules
-)
-{
-
-    $manifest =
-    $loadedModule.Manifest
-
-    if(
-        -not ($manifest -is [System.Collections.IDictionary]) -or
-        -not $manifest.Contains("Name")
-    )
-    {
-
-        continue
-
-    }
-
-    $moduleName =
-    [string]$manifest.Name
-
-    foreach(
-        $requiredModule in @($manifest.RequiresModules)
-    )
-    {
-
-        if(
-            -not $moduleByName.ContainsKey($requiredModule)
-        )
-        {
-
-            $null =
-            $errors.Add(
-                "$moduleName requires module '$requiredModule', but its manifest was not loaded."
-            )
-
-        }
-
-    }
-
-    if(
-        $manifest.RequiresFunctions -is [System.Collections.IDictionary]
-    )
-    {
-
-        foreach(
-            $requiredFunction in $manifest.RequiresFunctions.Keys
-        )
-        {
-
-            $declaredOwner =
-            [string]$manifest.RequiresFunctions[$requiredFunction]
-
-            if(
-                -not $functionOwners.ContainsKey($requiredFunction)
-            )
-            {
-
-                $null =
-                $errors.Add(
-                    "$moduleName requires function '$requiredFunction' from $declaredOwner, but it is not declared."
-                )
-
-                continue
-
+        ) {
+            $functionName = $functionAst.Name
+            if($functionOwners.ContainsKey($functionName)) {
+                $null = $errors.Add("Function '$functionName' is declared by both $($functionOwners[$functionName]) and $moduleName.")
+            } else {
+                $functionOwners[$functionName] = $moduleName
             }
-
-            if(
-                $functionOwners[$requiredFunction] -cne $declaredOwner
-            )
-            {
-
-                $null =
-                $errors.Add(
-                    "$moduleName expects function '$requiredFunction' from $declaredOwner, but it is owned by $($functionOwners[$requiredFunction])."
-                )
-
-            }
-
-            if(
-                -not (
-                    Get-Command `
-                    -Name $requiredFunction `
-                    -CommandType Function `
-                    -ErrorAction SilentlyContinue
-                )
-            )
-            {
-
-                $null =
-                $errors.Add(
-                    "$moduleName requires function '$requiredFunction', but it did not load into the runtime."
-                )
-
-            }
-
         }
-
     }
-
-    if(
-        $manifest.RequiresTypes -is [System.Collections.IDictionary]
-    )
-    {
-
-        foreach(
-            $requiredType in $manifest.RequiresTypes.Keys
-        )
-        {
-
-            $declaredOwner =
-            [string]$manifest.RequiresTypes[$requiredType]
-
-            $requiredTypes[$requiredType] =
-            $true
-
-            if(
-                -not $typeProviders.ContainsKey($requiredType) -or
-                $typeProviders[$requiredType] -cne $declaredOwner
-            )
-            {
-
-                $null =
-                $errors.Add(
-                    "$moduleName requires type '$requiredType' from $declaredOwner, but that provider was not declared."
-                )
-
-            }
-
-            if(
-                $null -eq ($requiredType -as [type])
-            )
-            {
-
-                $null =
-                $errors.Add(
-                    "$moduleName requires runtime type '$requiredType', but it was not loaded."
-                )
-
-            }
-
+    foreach($loadedModule in $LoadedModules) {
+        $manifest = $loadedModule.Manifest
+        if(-not ($manifest -is [System.Collections.IDictionary]) -or -not $manifest.Contains("Name")) {
+            continue
         }
-
+        $moduleName = [string]$manifest.Name
+        foreach($requiredModule in @($manifest.RequiresModules)
+        ) {
+            if(-not $moduleByName.ContainsKey($requiredModule)) {
+                $null = $errors.Add("$moduleName requires module '$requiredModule', but its manifest was not loaded.")
+            }
+        }
+        if($manifest.RequiresFunctions -is [System.Collections.IDictionary]) {
+            foreach($requiredFunction in $manifest.RequiresFunctions.Keys) {
+                $declaredOwner = [string]$manifest.RequiresFunctions[$requiredFunction]
+                if(-not $functionOwners.ContainsKey($requiredFunction)) {
+                    $null = $errors.Add("$moduleName requires function '$requiredFunction' from $declaredOwner, but it is not declared.")
+                    continue
+                }
+                if($functionOwners[$requiredFunction] -cne $declaredOwner) {
+                    $null = $errors.Add("$moduleName expects function '$requiredFunction' from $declaredOwner, but it is owned by $($functionOwners[$requiredFunction]).")
+                }
+                if(-not (Get-Command -Name $requiredFunction -CommandType Function -ErrorAction SilentlyContinue)) {
+                    $null = $errors.Add("$moduleName requires function '$requiredFunction', but it did not load into the runtime.")
+                }
+            }
+        }
+        if($manifest.RequiresTypes -is [System.Collections.IDictionary]) {
+            foreach($requiredType in $manifest.RequiresTypes.Keys) {
+                $declaredOwner = [string]$manifest.RequiresTypes[$requiredType]
+                $requiredTypes[$requiredType] = $true
+                if(-not $typeProviders.ContainsKey($requiredType) -or $typeProviders[$requiredType] -cne $declaredOwner) {
+                    $null = $errors.Add("$moduleName requires type '$requiredType' from $declaredOwner, but that provider was not declared.")
+                }
+                if($null -eq ($requiredType -as [type])) {
+                    $null = $errors.Add("$moduleName requires runtime type '$requiredType', but it was not loaded.")
+                }
+            }
+        }
     }
-
-}
-
-return [PSCustomObject]@{
-    IsValid = $errors.Count -eq 0
-    Errors = @($errors)
-    ModuleCount = $moduleByName.Count
-    FunctionCount = $functionOwners.Count
-    RequiredTypeCount = $requiredTypes.Count
-    RequiredFileCount = $requiredFiles.Count
-}
-
+    return [PSCustomObject]@{
+        IsValid = $errors.Count -eq 0
+        Errors = @($errors)
+        ModuleCount = $moduleByName.Count
+        FunctionCount = $functionOwners.Count
+        RequiredTypeCount = $requiredTypes.Count
+        RequiredFileCount = $requiredFiles.Count
+    }
 }
 
 # ============================================================
 # MODULE LOADING
 # ============================================================
 
-$GaloreModuleFiles =
-@(
+$GaloreModuleFiles = @(
     "LauncherLogging.ps1"
     "LauncherProcess.ps1"
     "LauncherStartup.ps1"
@@ -1055,106 +418,35 @@ $GaloreModuleFiles =
     "LauncherHotkeySettings.ps1"
     "LauncherBackup.ps1"
 )
-
-$script:GaloreLoadedModules =
-New-Object System.Collections.ArrayList
-
-for(
-    $moduleIndex = 0;
-    $moduleIndex -lt $GaloreModuleFiles.Count;
-    $moduleIndex++
-)
-{
-
-    $GaloreModuleFile =
-    $GaloreModuleFiles[$moduleIndex]
-
-    $GaloreModuleSource =
-    Get-GaloreModuleSource `
-    -FileName $GaloreModuleFile
-
-    Remove-Variable `
-    -Name GaloreModuleManifest `
-    -Scope Script `
-    -ErrorAction SilentlyContinue
-
-    if(
-        $GaloreModuleFile -eq "LauncherLogging.ps1"
-    )
-    {
-
+$script:GaloreLoadedModules = New-Object System.Collections.ArrayList
+for($moduleIndex = 0; $moduleIndex -lt $GaloreModuleFiles.Count; $moduleIndex++) {
+    $GaloreModuleFile = $GaloreModuleFiles[$moduleIndex]
+    $GaloreModuleSource = Get-GaloreModuleSource -FileName $GaloreModuleFile
+    Remove-Variable -Name GaloreModuleManifest -Scope Script -ErrorAction SilentlyContinue
+    if($GaloreModuleFile -eq "LauncherLogging.ps1") {
         $GaloreModuleManifest = $script:GaloreBootstrapLoggingManifest
-
-    }
-    else
-    {
-
+    } else {
         . ([scriptblock]::Create($GaloreModuleSource))
-
     }
-
-    if(
-        $null -eq $GaloreModuleManifest
-    )
-    {
-
+    if($null -eq $GaloreModuleManifest) {
         throw "$GaloreModuleFile did not declare GaloreModuleManifest."
-
     }
-
-    Publish-GaloreModuleFunctions `
-    -ModuleSource $GaloreModuleSource
-
-    $null =
-    $script:GaloreLoadedModules.Add(
-        [PSCustomObject]@{
+    Publish-GaloreModuleFunctions -ModuleSource $GaloreModuleSource
+    $null = $script:GaloreLoadedModules.Add([PSCustomObject]@{
             FileName = $GaloreModuleFile
             ActualOrder = $moduleIndex + 1
             Manifest = $GaloreModuleManifest
             Source = $GaloreModuleSource
         }
     )
-
-    Write-GaloreLog `
-    -Level "INFO" `
-    -Component "Modules" `
-    -Message "Loaded $GaloreModuleFile."
-
+    Write-GaloreLog -Level "INFO" -Component "Modules" -Message "Loaded $GaloreModuleFile."
 }
-
-Remove-Variable `
--Name GaloreModuleManifest `
--Scope Script `
--ErrorAction SilentlyContinue
-
-$script:GaloreDependencySummary =
-Test-GaloreModuleDependencies `
--LoadedModules $script:GaloreLoadedModules `
--ModuleRoot $ModuleRoot `
--AppRoot $AppRoot
-
-if(
-    -not $script:GaloreDependencySummary.IsValid
-)
-{
-
-    throw (
-        "Galore module dependency validation failed:`r`n- " +
-        ($script:GaloreDependencySummary.Errors -join "`r`n- ")
-    )
-
+Remove-Variable -Name GaloreModuleManifest -Scope Script -ErrorAction SilentlyContinue
+$script:GaloreDependencySummary = Test-GaloreModuleDependencies -LoadedModules $script:GaloreLoadedModules -ModuleRoot $ModuleRoot -AppRoot $AppRoot
+if(-not $script:GaloreDependencySummary.IsValid) {
+    throw ("Galore module dependency validation failed:`r`n- " + ($script:GaloreDependencySummary.Errors -join "`r`n- "))
 }
-
-Write-GaloreLog `
--Level "INFO" `
--Component "Dependencies" `
--Message (
-    "Validation passed: " +
-    "$($script:GaloreDependencySummary.ModuleCount) modules, " +
-    "$($script:GaloreDependencySummary.FunctionCount) functions, " +
-    "$($script:GaloreDependencySummary.RequiredTypeCount) required types, " +
-    "$($script:GaloreDependencySummary.RequiredFileCount) files."
-)
+Write-GaloreLog -Level "INFO" -Component "Dependencies" -Message ("Validation passed: " + "$($script:GaloreDependencySummary.ModuleCount) modules, " + "$($script:GaloreDependencySummary.FunctionCount) functions, " + "$($script:GaloreDependencySummary.RequiredTypeCount) required types, " + "$($script:GaloreDependencySummary.RequiredFileCount) files.")
 
 # ============================================================
 # LOAD LIBRARIES
@@ -1162,84 +454,30 @@ Write-GaloreLog `
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # ============================================================
 # INITIALIZE LAUNCHER CONFIGURATION
 # ============================================================
 
-$LauncherConfiguration =
-Initialize-LauncherConfiguration `
--AppRoot $AppRoot
-
-if(
-    $null -eq $LauncherConfiguration
-)
-{
-
+$LauncherConfiguration = Initialize-LauncherConfiguration -AppRoot $AppRoot
+if($null -eq $LauncherConfiguration) {
     Stop-LauncherSingleInstance
-
     return
-
 }
-
-$ProgramRoot =
-$LauncherConfiguration.ProgramRoot
-
-Initialize-LauncherSettings `
--ProgramRoot $ProgramRoot
-
-$EnvPaths =
-$LauncherConfiguration.EnvPaths
-
-$Programs =
-$LauncherConfiguration.Programs
-
-Initialize-GaloreBrowser `
--Programs $Programs `
--AppRoot $AppRoot
-
-Apply-GaloreProgramOverrides `
--Programs $Programs
-
-Write-GaloreLog `
--Level "INFO" `
--Component "Configuration" `
--Message "Launcher configuration initialized."
-
-$runtimeDependencyValidation =
-Test-GaloreModuleDependencies `
--LoadedModules $script:GaloreLoadedModules `
--ModuleRoot $ModuleRoot `
--AppRoot $AppRoot `
--RuntimeVariablesOnly
-
-if(
-    -not $runtimeDependencyValidation.IsValid
-)
-{
-
-    throw (
-        "Galore runtime dependency validation failed:`r`n- " +
-        ($runtimeDependencyValidation.Errors -join "`r`n- ")
-    )
-
+$ProgramRoot = $LauncherConfiguration.ProgramRoot
+Initialize-LauncherSettings -ProgramRoot $ProgramRoot
+$EnvPaths = $LauncherConfiguration.EnvPaths
+$Programs = $LauncherConfiguration.Programs
+Initialize-GaloreBrowser -Programs $Programs -AppRoot $AppRoot
+Apply-GaloreProgramOverrides -Programs $Programs
+Write-GaloreLog -Level "INFO" -Component "Configuration" -Message "Launcher configuration initialized."
+$runtimeDependencyValidation = Test-GaloreModuleDependencies -LoadedModules $script:GaloreLoadedModules -ModuleRoot $ModuleRoot -AppRoot $AppRoot -RuntimeVariablesOnly
+if(-not $runtimeDependencyValidation.IsValid) {
+    throw ("Galore runtime dependency validation failed:`r`n- " + ($runtimeDependencyValidation.Errors -join "`r`n- "))
 }
-
-if(
-    $script:LauncherRunningAsScript
-)
-{
-
-    Write-Host (
-        "Dependency validation passed: " +
-        "$($script:GaloreDependencySummary.ModuleCount) modules, " +
-        "$($script:GaloreDependencySummary.FunctionCount) functions, " +
-        "$($script:GaloreDependencySummary.RequiredTypeCount) required types, " +
-        "$($script:GaloreDependencySummary.RequiredFileCount) files."
-    ) -ForegroundColor DarkGreen
-
+if($script:LauncherRunningAsScript) {
+    Write-Host ("Dependency validation passed: " + "$($script:GaloreDependencySummary.ModuleCount) modules, " + "$($script:GaloreDependencySummary.FunctionCount) functions, " + "$($script:GaloreDependencySummary.RequiredTypeCount) required types, " + "$($script:GaloreDependencySummary.RequiredFileCount) files.") -ForegroundColor DarkGreen
 }
 
 # ============================================================
@@ -1255,334 +493,215 @@ Initialize-UIStyleColors
 
 function Open-ProgramWindow {
 
-# ============================================================
-# CREATE PROGRAM WINDOW
-# ============================================================
+    # ============================================================
+    # CREATE PROGRAM WINDOW
+    # ============================================================
 
-$form =
-New-ProgramWindow
+    $form = New-ProgramWindow
+    $script:LauncherForm = $form
 
-$script:LauncherForm = $form
+    # ==========================
+    # BACKGROUND MAINTENANCE
+    # ==========================
 
-# ==========================
-# BACKGROUND MAINTENANCE
-# ==========================
+    Initialize-GaloreMaintenance -ProgramRoot $ProgramRoot
+    Write-GaloreLog -Level "INFO" -Component "Maintenance" -Message "Background maintenance initialized."
 
-Initialize-GaloreMaintenance `
--ProgramRoot $ProgramRoot
+    # ==========================
+    # GLOBAL HOTKEY SUPPORT
+    # ==========================
 
-Write-GaloreLog `
--Level "INFO" `
--Component "Maintenance" `
--Message "Background maintenance initialized."
+    Initialize-HotkeySupport
+    Initialize-GaloreHotkeySettings
 
-# ==========================
-# GLOBAL HOTKEY SUPPORT
-# ==========================
+    # ==========================
+    # REGISTER CTRL + SHIFT + SPACE
+    # ==========================
 
-Initialize-HotkeySupport
+    Initialize-GlobalHotkey $form.Handle
 
-Initialize-GaloreHotkeySettings
+    # ==========================
+    # SAVE POSITION / SIZE
+    # ==========================
 
-# ==========================
-# REGISTER CTRL + SHIFT + SPACE
-# ==========================
+    Initialize-LauncherWindowState -Form $form
 
-Initialize-GlobalHotkey `
-$form.Handle
+    # ==========================
+    # TOGGLE WINDOW
+    # ==========================
 
-# ==========================
-# SAVE POSITION / SIZE
-# ==========================
+    Register-LauncherToggleHotkey $form
 
-Initialize-LauncherWindowState `
--Form $form
+    # ==========================
+    # REAL TIME CLOCK
+    # ==========================
 
-# ==========================
-# TOGGLE WINDOW
-# ==========================
+    Initialize-Clock $form
 
-Register-LauncherToggleHotkey `
-$form
+    # ============================================================
+    # APPLY PROGRAM ICON TO WINDOW + TASKBAR
+    # ============================================================
 
-# ==========================
-# REAL TIME CLOCK
-# ==========================
+    Initialize-ProgramIcon $form
 
-Initialize-Clock `
-$form
+    # ============================================================
+    # REMOVE WINDOWS TITLE BAR
+    # ============================================================
 
-# ============================================================
-# APPLY PROGRAM ICON TO WINDOW + TASKBAR
-# ============================================================
+    $titleBar = Initialize-ProgramTitleBar -Form $form
 
-Initialize-ProgramIcon `
-$form
+    # ============================================================
+    # WINDOW BUTTONS
+    # ============================================================
 
-# ============================================================
-# REMOVE WINDOWS TITLE BAR
-# ============================================================
+    Initialize-MinimizeButton
+    Initialize-MaximizeButton
+    Initialize-CloseButton
 
-$titleBar =
-Initialize-ProgramTitleBar `
--Form $form
+    # ============================================================
+    # SYSTEM MONITOR PANEL
+    # ============================================================
 
-# ============================================================
-# WINDOW BUTTONS
-# ============================================================
+    $systemMonitor = New-SystemMonitorPanel
+    $systemPanel = $systemMonitor.Panel
+    $cpuLabel = $systemMonitor.CPU
+    $ramLabel = $systemMonitor.RAM
+    $gpuLabel = $systemMonitor.GPU
+    $gpuTempLabel = $systemMonitor.GPUTemp
+    $form.Controls.Add($systemPanel)
 
-Initialize-MinimizeButton
+    # ============================================================
+    # HARDWARE EVENTS
+    # ============================================================
 
-Initialize-MaximizeButton
+    Register-HardwareMonitorEvents -SystemPanel $systemPanel
+    Initialize-HardwareCacheReader
+    Initialize-RAMCleanupSchedule
 
-Initialize-CloseButton
+    # ============================================================
+    # TITLE BAR RESIZE HANDLER
+    # ============================================================
 
-# ============================================================
-# SYSTEM MONITOR PANEL
-# ============================================================
+    Register-TitleBarResizeHandler -Form $form -TitleBar $titleBar
 
-$systemMonitor =
-New-SystemMonitorPanel
+    # ==========================
+    # TASK MANAGER ICON
+    # ==========================
 
-$systemPanel =
-$systemMonitor.Panel
+    Initialize-TaskManagerButton -Form $form
 
-$cpuLabel =
-$systemMonitor.CPU
+    # ==========================
+    # CMD ADMIN ICON
+    # ==========================
 
-$ramLabel =
-$systemMonitor.RAM
+    Initialize-CmdButton -Form $form
 
-$gpuLabel =
-$systemMonitor.GPU
+    # ==========================
+    # SYSTEM TOOLS
+    # ==========================
 
-$gpuTempLabel =
-$systemMonitor.GPUTemp
+    Initialize-GaloreSystemTools -Form $form
 
-$form.Controls.Add(
-    $systemPanel
-)
+    # ==========================
+    # POST-ITS
+    # ==========================
 
-# ============================================================
-# HARDWARE EVENTS
-# ============================================================
+    Initialize-GalorePostIts -Form $form
 
-Register-HardwareMonitorEvents `
--SystemPanel $systemPanel
+    # ==========================
+    # QUICK ACCESS BAR
+    # ==========================
 
-Initialize-HardwareCacheReader
+    Initialize-GaloreQuickAccessBar -Form $form
 
-Initialize-RAMCleanupSchedule
+    # ==========================
+    # LIVE WINDOW TASKBAR
+    # ==========================
 
-# ============================================================
-# TITLE BAR RESIZE HANDLER
-# ============================================================
+    Initialize-GaloreWindowTaskbar -Form $form
 
-Register-TitleBarResizeHandler `
--Form $form `
--TitleBar $titleBar
+    # ==========================
+    # WINDOWS SEARCH
+    # ==========================
 
-# ==========================
-# TASK MANAGER ICON
-# ==========================
+    Initialize-StartMenu -Form $form
 
-Initialize-TaskManagerButton `
-    -Form $form
+    # ==========================
+    # DESKTOP BUTTONS
+    # ==========================
 
-# ==========================
-# CMD ADMIN ICON
-# ==========================
+    Initialize-DesktopButtons -Form $form -TitleBar $titleBar
 
-Initialize-CmdButton `
-    -Form $form
+    # ============================================================
+    # PROGRAM CONTROLS
+    # ============================================================
 
-# ==========================
-# SYSTEM TOOLS
-# ==========================
+    $ProgramControls = Initialize-ProgramControls -Form $form -Programs $Programs
+    $checks = $ProgramControls.Checks
+    $statuses = $ProgramControls.Statuses
+    $CategoryControls = Initialize-GaloreCategories -Form $form
+    foreach($categoryProgramName in $CategoryControls.Programs.Keys) {
+        $Programs[$categoryProgramName] = $CategoryControls.Programs[$categoryProgramName]
+        $checks[$categoryProgramName] = $CategoryControls.Checks[$categoryProgramName]
+    }
+    Register-GaloreCategoryHotkeys -Programs $Programs -Checks $checks -Statuses $statuses -AppRoot $AppRoot
+    Initialize-GaloreHotkeyButton -Form $form
 
-Initialize-GaloreSystemTools `
-    -Form $form
+    # ============================================================
+    # LAUNCHER ACTION BUTTONS
+    # ============================================================
 
-# ==========================
-# POST-ITS
-# ==========================
+    Initialize-LauncherButtons -Form $form -Programs $Programs -Checks $checks -Statuses $statuses
+    Restore-GaloreHeaderControlZOrder -Form $form
 
-Initialize-GalorePostIts `
-    -Form $form
+    # ============================================================
+    # SYSTEM TRAY ICON
+    # ============================================================
 
-# ==========================
-# QUICK ACCESS BAR
-# ==========================
+    Initialize-SystemTray
+    Write-GaloreLog -Level "INFO" -Component "Tray" -Message "System tray initialized."
 
-Initialize-GaloreQuickAccessBar `
-    -Form $form
+    # ============================================================
+    # SAVE SETTINGS WHEN CLOSING
+    # ============================================================
 
-# ==========================
-# LIVE WINDOW TASKBAR
-# ==========================
+    Register-LauncherClosingEvent -Form $form -Checks $checks
 
-Initialize-GaloreWindowTaskbar `
-    -Form $form
+    # ============================================================
+    # SYSTEM MONITOR DISPLAY TIMER
+    # ============================================================
 
-# ==========================
-# WINDOWS SEARCH
-# ==========================
+    Initialize-SystemMonitorDisplay $cpuLabel $ramLabel $gpuLabel $gpuTempLabel $form
 
-Initialize-StartMenu `
-    -Form $form
+    # ============================================================
+    # SHOW WINDOW WITH CLEAN FADE IN
+    # ============================================================
 
-# ==========================
-# DESKTOP BUTTONS
-# ==========================
-
-Initialize-DesktopButtons `
--Form $form `
--TitleBar $titleBar
-
-# ============================================================
-# PROGRAM CONTROLS
-# ============================================================
-
-$ProgramControls =
-Initialize-ProgramControls `
--Form $form `
--Programs $Programs
-
-$checks =
-$ProgramControls.Checks
-
-$statuses =
-$ProgramControls.Statuses
-
-$CategoryControls =
-Initialize-GaloreCategories `
--Form $form
-
-foreach($categoryProgramName in $CategoryControls.Programs.Keys)
-{
-    $Programs[$categoryProgramName] = $CategoryControls.Programs[$categoryProgramName]
-    $checks[$categoryProgramName] = $CategoryControls.Checks[$categoryProgramName]
-}
-
-Register-GaloreCategoryHotkeys `
-    -Programs $Programs `
-    -Checks $checks `
-    -Statuses $statuses `
-    -AppRoot $AppRoot
-
-Initialize-GaloreHotkeyButton `
-    -Form $form
-
-# ============================================================
-# LAUNCHER ACTION BUTTONS
-# ============================================================
-
-Initialize-LauncherButtons `
--Form $form `
--Programs $Programs `
--Checks $checks `
--Statuses $statuses
-
-Restore-GaloreHeaderControlZOrder `
--Form $form
-
-# ============================================================
-# SYSTEM TRAY ICON
-# ============================================================
-
-Initialize-SystemTray
-
-Write-GaloreLog `
--Level "INFO" `
--Component "Tray" `
--Message "System tray initialized."
-
-# ============================================================
-# SAVE SETTINGS WHEN CLOSING
-# ============================================================
-
-Register-LauncherClosingEvent `
--Form $form `
--Checks $checks
-
-# ============================================================
-# SYSTEM MONITOR DISPLAY TIMER
-# ============================================================
-
-Initialize-SystemMonitorDisplay `
-$cpuLabel `
-$ramLabel `
-$gpuLabel `
-$gpuTempLabel `
-$form
-
-# ============================================================
-# SHOW WINDOW WITH CLEAN FADE IN
-# ============================================================
-
-Show-ProgramWindowWithFade `
-$form
-
-Write-GaloreLog `
--Level "INFO" `
--Component "Window" `
--Message "Main program window shown."
-
+    Show-ProgramWindowWithFade $form
+    Write-GaloreLog -Level "INFO" -Component "Window" -Message "Main program window shown."
 }
 
 # ============================================================
 # SPLASH SUPPORT
 # ============================================================
 
-try
-{
-
-    Show-LauncherSplash `
-    -AppRoot $AppRoot
+try {
+    Show-LauncherSplash -AppRoot $AppRoot
 
     # ========================================================
     # OPEN PROGRAM WINDOW
     # ========================================================
 
     Open-ProgramWindow
-
-}
-catch
-{
-
-    Write-LauncherLog `
-    -Exception $_ `
-    -Context "Launcher startup or main-window execution failed."
-
+} catch {
+    Write-LauncherLog -Exception $_ -Context "Launcher startup or main-window execution failed."
     throw
-
-}
-
-finally
-{
-
-    if(
-        Get-Command `
-        -Name Stop-LauncherRuntimeResources `
-        -CommandType Function `
-        -ErrorAction SilentlyContinue
-    )
-    {
-
-        try
-        {
-
-            Stop-LauncherRuntimeResources `
-            -Form $script:LauncherForm
-
+} finally {
+    if(Get-Command -Name Stop-LauncherRuntimeResources -CommandType Function -ErrorAction SilentlyContinue) {
+        try {
+            Stop-LauncherRuntimeResources -Form $script:LauncherForm
+        } catch {
         }
-        catch
-        {
-
-        }
-
     }
-
     Stop-LauncherSingleInstance
-
 }
