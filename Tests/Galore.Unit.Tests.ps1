@@ -66,6 +66,8 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherBackup.ps1")
 
+. (Join-Path $moduleRoot "LauncherHotkeys.ps1")
+
 
 
 Describe "Launcher settings validation" {
@@ -843,6 +845,49 @@ Describe "Settings backup selection" {
 
         @($files | ForEach-Object { Split-Path $_ -Leaf }) |
         Should Not Contain "maintenance-state.json"
+
+    }
+
+}
+
+Describe "Hotkey settings persistence" {
+
+    BeforeEach {
+
+        $script:GaloreHotkeyTestSettingsFolder = Join-Path $TestDrive "Settings"
+
+        New-Item -ItemType Directory -Path $script:GaloreHotkeyTestSettingsFolder -Force | Out-Null
+
+        Mock Get-LauncherSettingsFolder { $script:GaloreHotkeyTestSettingsFolder }
+
+        Mock Write-LauncherDiagnostic {}
+
+    }
+
+    It "saves and restores the launcher and category hotkeys" {
+
+        Initialize-GaloreHotkeySettings
+
+        $script:GaloreLauncherHotkey = [pscustomobject]@{ ModifierMask = 6; VirtualKey = 72; DisplayText = "Ctrl+Shift+H" }
+
+        $script:GaloreCategoryHotkeys["Category2"] = [pscustomobject]@{ ModifierMask = 6; VirtualKey = 74; DisplayText = "Ctrl+Shift+J" }
+
+        Save-GaloreHotkeySettings
+
+        $script:GaloreLauncherHotkey = $null
+
+        $script:GaloreCategoryHotkeys = $null
+
+        Initialize-GaloreHotkeySettings
+
+        (Get-GaloreLauncherToggleHotkey).DisplayText |
+        Should Be "Ctrl+Shift+H"
+
+        (Get-GaloreCategoryHotkey -CategoryId "Category2").DisplayText |
+        Should Be "Ctrl+Shift+J"
+
+        (Get-Content -LiteralPath (Join-Path $script:GaloreHotkeyTestSettingsFolder "hotkeys.json") -Raw | ConvertFrom-Json).Version |
+        Should Be 2
 
     }
 
