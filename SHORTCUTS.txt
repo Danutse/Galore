@@ -16,25 +16,16 @@ Left-click a program name or checkbox
 Right-click a program name
     Choose a different executable for that program.
 
-Launch All / Terminate All
-    Start or stop every configured program.
-
-Launch Selected / Terminate Selected
-    Start or stop only the checked programs.
-
 CATEGORY BUTTONS
 ----------------
-
-Right-click a category button
-    Open its five-program category selector. Right-click again to close it.
 
 Ctrl + right-click a category button
     Rename that category.
 
-Inside a category selector:
+Inside the category button:
 
   Left-click a slot
-      Select or clear that slot.
+      Selectthat slot.
 
   Right-click a slot
       Choose or replace its executable.
@@ -44,6 +35,7 @@ Inside a category selector:
 
 QUICK-ACCESS BAR (BOTTOM)
 -------------------------
+(The bar is transparent, you just drag underneath the program window UI) 
 
 Drag a folder, .exe, .lnk shortcut, or .url shortcut onto the bar
     Add it to Quick Access.
@@ -75,27 +67,11 @@ Click the launcher/search icon in the title bar
 SYSTEM TOOLS
 ------------
 
-Double-click the Internet icon
-    Retry the active network connection after confirmation.
-
-Click the Volume icon
-    Open the volume control.
-
-Click the Keyboard Language icon
-    Choose an installed keyboard language. Use the mouse wheel to scroll a
-    longer language list.
-
-Click the Calculator icon
-    Open Windows Calculator.
-
 Click the hardware information area
     Run Galore's RAM cleanup action.
 
 POST-ITS
 --------
-
-Click the Post-it icon
-    Create a new post-it note.
 
 Drag a post-it by its drag area
     Move it. Its position and text are saved automatically.
@@ -103,12 +79,3 @@ Drag a post-it by its drag area
 Check a post-it as complete
     Mark it for removal; completed notes are removed from saved state when
     Galore closes.
-
-SYSTEM TRAY
------------
-
-Double-click the Galore tray icon
-    Restore Galore.
-
-Right-click the Galore tray icon
-    Choose Open Launcher or Exit.
