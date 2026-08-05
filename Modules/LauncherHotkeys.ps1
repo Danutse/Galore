@@ -12,7 +12,7 @@ $GaloreModuleManifest = [ordered]@{
         "Show-LauncherWindowAnimated" = "UI"
         "Get-LauncherSettingsFolder" = "LauncherSettings"
         "Invoke-ProgramLaunch" = "LauncherAction"
-        "Save-GaloreCategoryState" = "LauncherCategories"
+        "Get-GaloreCategoryById" = "LauncherCategories"
         "Write-LauncherDiagnostic" = "LauncherLogging"
     }
     RequiresTypes = [ordered]@{}
@@ -318,7 +318,7 @@ function Register-GaloreCategoryHotkeys {
         $hotkeyId = 5100 + $categoryNumber
         $hotkey = Get-GaloreCategoryHotkey -CategoryId $categoryId
         $action = {
-            $category = @($script:GaloreCategoryState.Categories | Where-Object { $_.Id -eq $categoryId }) | Select-Object -First 1
+            $category = Get-GaloreCategoryById -CategoryId $categoryId
             if($null -eq $category) { return }
             $programNames = @($category.Slots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.Path) -and $_.Selected } | ForEach-Object { $_.Id })
             if($programNames.Count -gt 0) { Invoke-ProgramLaunch -Programs $Programs -Statuses $Statuses -ProgramNames $programNames -AppRoot $AppRoot -ShowStartingStatus }

@@ -5,7 +5,7 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherHotkeySettings"
     LoadOrder = 270
-    RequiresModules = @("LauncherAlphaOverlay", "LauncherCategories", "LauncherHotkeys", "LauncherLogging", "LauncherSystemTools", "UI")
+    RequiresModules = @("LauncherAlphaOverlay", "LauncherCategories", "LauncherDomain", "LauncherHotkeys", "LauncherLogging", "LauncherSystemTools", "UI")
     RequiresFunctions = [ordered]@{
         "Get-GaloreLauncherToggleHotkey" = "LauncherHotkeys"
         "Get-GaloreCategoryHotkey" = "LauncherHotkeys"
@@ -19,13 +19,17 @@ $GaloreModuleManifest = [ordered]@{
         "New-HotkeysButton" = "UI"
         "Set-GaloreTransparentWindowRegion" = "LauncherAlphaOverlay"
         "Write-LauncherDiagnostic" = "LauncherLogging"
+        "Get-GaloreCategoryById" = "LauncherCategories"
     }
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreHotkeySettingsRuntimeState" = "LauncherDomain"
+    }
     RequiresVariables = @()
     RequiresFolders = @()
     RequiresFiles = @()
     ProvidesTypes = @()
 }
+$script:GaloreHotkeySettingsRuntime = [GaloreHotkeySettingsRuntimeState]::new()
 
 # ============================================================
 # HOTKEY DISPLAY
@@ -113,7 +117,9 @@ function Invoke-GaloreHotkeyCaptureInput {
 # ============================================================
 
 function Show-GaloreHotkeySettingsPopup {
-    param($Anchor)
+    param($Anchor, $Runtime = $script:GaloreHotkeySettingsRuntime)
+    if($null -eq $Anchor -or $Anchor.IsDisposed) { return }
+    if($Runtime.Popup -and -not $Runtime.Popup.IsDisposed) { $Runtime.Popup.Close(); return }
     $popup = New-GaloreSystemToolPopup -Anchor $Anchor -BackgroundImageName "HotkeyBackground.png" -FallbackWidth 420 -FallbackHeight 300
     if($popup.Tag.SelectorImage) { Set-GaloreTransparentWindowRegion -Form $popup -Bitmap $popup.Tag.SelectorImage }
     $popup.KeyPreview = $true
@@ -143,7 +149,7 @@ function Show-GaloreHotkeySettingsPopup {
     $hotkeyRows = @([pscustomobject]@{ Id = "LauncherToggle"; Name = "Show / hide Galore"; Hotkey = Get-GaloreLauncherToggleHotkey })
     for($number = 1; $number -le 4; $number++) {
         $categoryId = "Category$number"
-        $category = @($script:GaloreCategoryState.Categories | Where-Object { $_.Id -eq $categoryId }) | Select-Object -First 1
+        $category = Get-GaloreCategoryById -CategoryId $categoryId
         $categoryName = if($category) { [string]$category.Name } else { "Category $number" }
         $hotkeyRows += [pscustomobject]@{ Id = $categoryId; Name = $categoryName; Hotkey = Get-GaloreCategoryHotkey -CategoryId $categoryId }
     }
@@ -239,9 +245,11 @@ function Show-GaloreHotkeySettingsPopup {
             $sender.HotkeyCaptureState.Pending.Clear()
             $sender.HotkeyCaptureState.Field = $null
         }
-        $script:GaloreHotkeySettingsPopup = $null
+        $runtime = $sender.HotkeySettingsRuntime
+        if($runtime -and [object]::ReferenceEquals($runtime.Popup, $sender)) { $runtime.Popup = $null }
     })
-    $script:GaloreHotkeySettingsPopup = $popup
+    $popup | Add-Member -MemberType NoteProperty -Name HotkeySettingsRuntime -Value $Runtime -Force
+    $Runtime.Popup = $popup
     Show-GaloreSystemToolPopup -Popup $popup -Owner $Anchor.FindForm()
 }
 
@@ -250,21 +258,45 @@ function Show-GaloreHotkeySettingsPopup {
 # ============================================================
 
 function Initialize-GaloreHotkeyButton {
-    param([System.Windows.Forms.Form]$Form)
+    param([System.Windows.Forms.Form]$Form, $Runtime = $script:GaloreHotkeySettingsRuntime)
+    if($null -eq $Form -or $Form.IsDisposed) { return $null }
+    if($Runtime.OwnerForm -and -not $Runtime.OwnerForm.IsDisposed -and -not [object]::ReferenceEquals($Runtime.OwnerForm, $Form)) { Stop-GaloreHotkeySettingsResources -Runtime $Runtime }
+    if([object]::ReferenceEquals($Runtime.OwnerForm, $Form) -and $Runtime.Button -and -not $Runtime.Button.IsDisposed) { return $Runtime.Button }
     $button = New-HotkeysButton
     $button.Name = "GaloreHotkeysButton"
     $button.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $toolTip = New-Object System.Windows.Forms.ToolTip
-    $toolTip.SetToolTip($button, "Hotkeys")
+    $Runtime.ToolTip = New-Object System.Windows.Forms.ToolTip
+    $Runtime.ToolTip.SetToolTip($button, "Hotkeys")
     $button.Add_Click({
         param($sender, $event)
-        if($script:GaloreHotkeySettingsPopup -and -not $script:GaloreHotkeySettingsPopup.IsDisposed) {
-            $script:GaloreHotkeySettingsPopup.Close()
+        $runtime = $this.Tag
+        if($runtime.Popup -and -not $runtime.Popup.IsDisposed) {
+            $runtime.Popup.Close()
             return
         }
-        Show-GaloreHotkeySettingsPopup -Anchor $sender
+        Show-GaloreHotkeySettingsPopup -Anchor $sender -Runtime $runtime
     })
+    $button.Tag = $Runtime
     $Form.Controls.Add($button)
     $button.BringToFront()
-    $script:GaloreHotkeysButton = $button
+    $Runtime.OwnerForm = $Form
+    $Runtime.Button = $button
+    return $button
+}
+
+function Get-GaloreHotkeySettingsButton {
+    param($Runtime = $script:GaloreHotkeySettingsRuntime)
+    return $Runtime.Button
+}
+
+function Stop-GaloreHotkeySettingsResources {
+    param($Runtime = $script:GaloreHotkeySettingsRuntime)
+    if($null -eq $Runtime) { return }
+    if($Runtime.Popup -and -not $Runtime.Popup.IsDisposed) { try { $Runtime.Popup.Close() } catch { Write-LauncherDiagnostic -Exception $_ -Context "Failed to close the Galore hotkey settings popup." } }
+    if($Runtime.ToolTip) { try { $Runtime.ToolTip.Dispose() } catch {} }
+    if($Runtime.Button -and -not $Runtime.Button.IsDisposed) { try { $Runtime.Button.Dispose() } catch {} }
+    $Runtime.Popup = $null
+    $Runtime.ToolTip = $null
+    $Runtime.Button = $null
+    $Runtime.OwnerForm = $null
 }

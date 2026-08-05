@@ -420,6 +420,7 @@ $GaloreModuleFiles = @(
     "LauncherHotkeySettings.ps1"
     "LauncherBackup.ps1"
     "LauncherPopup.ps1"
+    "LauncherIntegrationAdapters.ps1"
 )
 $script:GaloreLoadedModules = New-Object System.Collections.ArrayList
 for($moduleIndex = 0; $moduleIndex -lt $GaloreModuleFiles.Count; $moduleIndex++) {

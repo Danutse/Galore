@@ -599,6 +599,9 @@ function Show-LauncherWindowAnimated {
         return
     }
     $script:LauncherWindowTargetVisible = $true
+    if(Get-Command Set-GaloreOverlayTargetVisible -ErrorAction SilentlyContinue) {
+        Set-GaloreOverlayTargetVisible -Visible $true
+    }
     if(-not $Form.Visible) {
         $Form.Opacity = 0
     }
@@ -623,6 +626,9 @@ function Hide-LauncherWindowAnimated {
         return
     }
     $script:LauncherWindowTargetVisible = $false
+    if(Get-Command Set-GaloreOverlayTargetVisible -ErrorAction SilentlyContinue) {
+        Set-GaloreOverlayTargetVisible -Visible $false
+    }
     if(-not $Form.Visible) {
         $Form.Opacity = 1
         return

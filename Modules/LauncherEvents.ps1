@@ -5,7 +5,7 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherEvents"
     LoadOrder = 50
-    RequiresModules = @("LauncherLogging", "LauncherDesktop", "LauncherHardware", "LauncherHotkeys", "LauncherMaintenance", "LauncherPrograms", "LauncherSettings", "LauncherStartMenu", "ProgramWindowUI", "SplashSupport", "UI", "LauncherRecycleHelper", "LauncherPostIts", "LauncherBrowser", "LauncherSystemTools")
+    RequiresModules = @("LauncherLogging", "LauncherDesktop", "LauncherHardware", "LauncherHotkeys", "LauncherMaintenance", "LauncherPrograms", "LauncherSettings", "LauncherStartMenu", "ProgramWindowUI", "SplashSupport", "UI", "LauncherRecycleHelper", "LauncherPostIts", "LauncherBrowser", "LauncherSystemTools", "LauncherQuickAccess", "LauncherAlphaOverlay", "LauncherWindowTaskbar", "LauncherCategories", "LauncherHotkeySettings")
     RequiresFunctions = [ordered]@{
         "Write-GaloreLog" = "LauncherLogging"
         "Write-LauncherDiagnostic" = "LauncherLogging"
@@ -25,6 +25,11 @@ $GaloreModuleManifest = [ordered]@{
         "Stop-GalorePostItResources" = "LauncherPostIts"
         "Stop-GaloreBrowserResources" = "LauncherBrowser"
         "Stop-GaloreSystemToolResources" = "LauncherSystemTools"
+        "Stop-GaloreQuickAccessResources" = "LauncherQuickAccess"
+        "Stop-GaloreOverlayResources" = "LauncherAlphaOverlay"
+        "Stop-GaloreWindowTaskbar" = "LauncherWindowTaskbar"
+        "Stop-GaloreHotkeySettingsResources" = "LauncherHotkeySettings"
+        "Stop-GaloreCategoryResources" = "LauncherCategories"
         "Stop-StartMenuResources" = "LauncherStartMenu"
         "Stop-UIResources" = "UI"
     }
@@ -199,7 +204,9 @@ function Stop-LauncherRuntimeResources {
         $Form = $script:LauncherForm
     }
     foreach($stopFunction in @(
+            "Stop-GaloreHotkeySettingsResources"
             "Stop-GlobalHotkey"
+            "Stop-GaloreCategoryResources"
             "Stop-ProgramStatusResources"
             "Stop-StartMenuResources"
             "Stop-DesktopResources"
@@ -209,6 +216,9 @@ function Stop-LauncherRuntimeResources {
             "Stop-GalorePostItResources"
             "Stop-GaloreBrowserResources"
             "Stop-GaloreSystemToolResources"
+            "Stop-GaloreQuickAccessResources"
+            "Stop-GaloreWindowTaskbar"
+            "Stop-GaloreOverlayResources"
         )
     ) {
         if(Get-Command -Name $stopFunction -CommandType Function -ErrorAction SilentlyContinue) {

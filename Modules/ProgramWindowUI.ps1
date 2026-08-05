@@ -423,7 +423,7 @@ function Initialize-Clock {
 function Restore-GaloreHeaderControlZOrder {
     param([System.Windows.Forms.Form]$Form)
     foreach($control in @(
-        $Form.Controls["WindowsSearchToggle"], $script:ClockLabel, $script:DateLabel, $script:TaskManagerButton, $script:CmdButton, $script:GaloreHotkeysButton
+        $Form.Controls["WindowsSearchToggle"], $script:ClockLabel, $script:DateLabel, $script:TaskManagerButton, $script:CmdButton, $Form.Controls["GaloreHotkeysButton"]
     )) {
         if($null -ne $control -and -not $control.IsDisposed -and $control.Parent -eq $Form) {
             $control.BringToFront()
@@ -544,6 +544,9 @@ function Show-ProgramWindowWithFade {
     $Form.Opacity = 0
     $Form.ShowInTaskbar = $true
     $script:LauncherWindowTargetVisible = $true
+    if(Get-Command Set-GaloreOverlayTargetVisible -ErrorAction SilentlyContinue) {
+        Set-GaloreOverlayTargetVisible -Visible $true
+    }
     $Form.Add_Shown({
         Start-WindowOpacityAnimation -Form $this -TargetOpacity 1 -DurationMilliseconds 420
     })

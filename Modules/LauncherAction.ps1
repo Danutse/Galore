@@ -5,17 +5,19 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherAction"
     LoadOrder = 140
-    RequiresModules = @("LauncherLogging", "LauncherPrograms", "UI")
+    RequiresModules = @("LauncherIntegrationAdapters", "LauncherLogging", "LauncherPrograms", "UI")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"
         "Refresh-StatusDelayed" = "LauncherPrograms"
         "Get-ResourceIcon" = "UI"
         "Style-Button" = "UI"
+        "Start-GaloreProgramAdapter" = "LauncherIntegrationAdapters"
+        "Start-GaloreSpotifyAutoplayAdapter" = "LauncherIntegrationAdapters"
     }
     RequiresTypes = [ordered]@{}
     RequiresVariables = @("AppRoot")
     RequiresFolders = @("Programs")
-    RequiresFiles = @("Programs\SpotifyPlay.vbs")
+    RequiresFiles = @()
     ProvidesTypes = @()
 }
 
@@ -91,18 +93,6 @@ function New-TerminateSelectedButton {
 }
 
 # ============================================================
-# SPOTIFY AUTOPLAY
-# ============================================================
-
-function Start-SpotifyAutoplay {
-    param($AppRoot)
-    $spotifyScript = Join-Path $AppRoot "Programs\SpotifyPlay.vbs"
-    if(Test-Path $spotifyScript) {
-        Start-Process -FilePath "$env:WINDIR\System32\wscript.exe" -ArgumentList "`"$spotifyScript`"" -WindowStyle Hidden
-    }
-}
-
-# ============================================================
 # LAUNCH PROGRAMS
 # ============================================================
 
@@ -126,14 +116,8 @@ function Invoke-ProgramLaunch {
             continue
         }
         $launchedPrograms[$launchIdentity] = $true
-        try {
-            if([string]::IsNullOrWhiteSpace($program.Args)) {
-                Start-Process -FilePath $program.Path -ErrorAction Stop
-            } else {
-                Start-Process -FilePath $program.Path -ArgumentList $program.Args -ErrorAction Stop
-            }
-        } catch {
-            Write-LauncherDiagnostic -Exception $_ -Context "Failed to launch '$name' from '$($program.Path)'."
+        if(-not (Start-GaloreProgramAdapter -Program $program)) {
+            Write-LauncherDiagnostic -Exception ([System.InvalidOperationException]::new("Program adapter rejected '$($program.Path)'.")) -Context "Failed to launch '$name' from '$($program.Path)'."
             continue
         }
         if($ShowStartingStatus -and $Statuses.ContainsKey($name)) {
@@ -144,7 +128,7 @@ function Invoke-ProgramLaunch {
         $updated += $name
     }
     Refresh-StatusDelayed -Programs $Programs -Statuses $Statuses -ProgramsToUpdate $updated
-    Start-SpotifyAutoplay -AppRoot $AppRoot
+    Start-GaloreSpotifyAutoplayAdapter -AppRoot $AppRoot | Out-Null
 }
 
 # ============================================================

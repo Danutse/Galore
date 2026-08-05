@@ -244,7 +244,7 @@ function New-LauncherProgramConfiguration {
     $browserProgram.BrowserId = if($defaultBrowser) { $defaultBrowser.Id } else { "" }
     $browserProgram.BrowserDisplayName = if($defaultBrowser) { $defaultBrowser.DisplayName } else { "No browser detected" }
     return @{
-        "Phone" = [GaloreProgramDefinition]::new("$env:SystemRoot\System32\wscript.exe", "//nologo `"$($EnvPaths.ScrcpyVBS)`"", "scrcpy", "scrcpy")
+        "Phone" = [GaloreProgramDefinition]::new($EnvPaths.ScrcpyVBS, "", "scrcpy", "scrcpy")
         "Discord" = [GaloreProgramDefinition]::new($EnvPaths.Discord, "--processStart Discord.exe", "Discord", "Discord")
         "Steam" = [GaloreProgramDefinition]::new($EnvPaths.Steam, "-silent", "steam", "steam")
         "Browser" = $browserProgram

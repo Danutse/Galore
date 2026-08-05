@@ -8,6 +8,9 @@ $GaloreModuleManifest = [ordered]@{
     RequiresModules = @("LauncherAlphaOverlay", "LauncherDomain", "LauncherLogging")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"
+        "Register-GaloreOverlayForm" = "LauncherAlphaOverlay"
+        "Unregister-GaloreOverlayForm" = "LauncherAlphaOverlay"
+        "Set-GaloreOverlayLifecycleReady" = "LauncherAlphaOverlay"
     }
     RequiresTypes = [ordered]@{
         "GaloreAlphaOverlay.PerPixelAlphaForm" = "LauncherAlphaOverlay"
@@ -209,8 +212,8 @@ function Get-GaloreWindowTaskbarIcon {
 }
 
 function Set-GaloreWindowTaskbarLocation {
-    param([System.Windows.Forms.Form]$Form)
-    $runtime = $script:GaloreWindowTaskbarRuntime
+    param([System.Windows.Forms.Form]$Form, $Runtime = $script:GaloreWindowTaskbarRuntime)
+    $runtime = $Runtime
     if($null -eq $runtime.Bar -or $runtime.Bar.IsDisposed -or $Form.IsDisposed -or $Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -or $Form.ClientSize.Width -le 0 -or $Form.ClientSize.Height -le 0) {
         return
     }
@@ -323,7 +326,10 @@ function Render-GaloreWindowTaskbar {
 }
 
 function Initialize-GaloreWindowTaskbar {
-    param([System.Windows.Forms.Form]$Form)
+    param([System.Windows.Forms.Form]$Form, $Runtime = $script:GaloreWindowTaskbarRuntime)
+    if($null -eq $Form -or $Form.IsDisposed -or $null -eq $Runtime) { return }
+    if([object]::ReferenceEquals($Runtime.OwnerForm, $Form) -and $Runtime.IsInitialized -and $Runtime.Bar -and -not $Runtime.Bar.IsDisposed -and $Runtime.Timer) { return }
+    Stop-GaloreWindowTaskbar -Runtime $Runtime
     $bar = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
     $bar.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
     $bar.ShowInTaskbar = $false
@@ -351,8 +357,10 @@ function Initialize-GaloreWindowTaskbar {
             }
         }
     })
-    $runtime = $script:GaloreWindowTaskbarRuntime
+    $runtime = $Runtime
+    $runtime.OwnerForm = $Form
     $runtime.Bar = $bar
+    Register-GaloreOverlayForm -Form $bar
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 1000
     $timer.Add_Tick({
@@ -369,21 +377,35 @@ function Initialize-GaloreWindowTaskbar {
     $timer.Start()
     $runtime.Timer = $timer
     Register-GaloreOverlayLifecycle -Form $Form
-    $Form.Add_Move({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
-    $Form.Add_SizeChanged({ Set-GaloreWindowTaskbarLocation -Form $Form }.GetNewClosure())
-    $Form.Add_FormClosed({ Stop-GaloreWindowTaskbar }.GetNewClosure())
-    $Form.Add_Shown({
+    $runtime.MoveHandler = { param($sender, $e) Set-GaloreWindowTaskbarLocation -Form $sender -Runtime $runtime }.GetNewClosure()
+    $runtime.SizeChangedHandler = { param($sender, $e) Set-GaloreWindowTaskbarLocation -Form $sender -Runtime $runtime }.GetNewClosure()
+    $runtime.FormClosedHandler = { param($sender, $e) if([object]::ReferenceEquals($runtime.OwnerForm, $sender)) { Stop-GaloreWindowTaskbar -Runtime $runtime } }.GetNewClosure()
+    $runtime.ShownHandler = {
         $bar.SetLayeredOpacity(0)
         $bar.Show()
-        Set-GaloreWindowTaskbarLocation -Form $Form
-        Update-GaloreWindowTaskbar
-        $script:GaloreOverlayLifecycleReady = $true
+        Set-GaloreWindowTaskbarLocation -Form $Form -Runtime $runtime
+        Update-GaloreWindowTaskbar -Runtime $runtime
+        Set-GaloreOverlayLifecycleReady -Ready $true
         Show-GaloreLauncherOverlayBars -DurationMilliseconds 420
-    }.GetNewClosure())
+    }.GetNewClosure()
+    $Form.Add_Move($runtime.MoveHandler)
+    $Form.Add_SizeChanged($runtime.SizeChangedHandler)
+    $Form.Add_FormClosed($runtime.FormClosedHandler)
+    $Form.Add_Shown($runtime.ShownHandler)
+    $runtime.IsInitialized = $true
 }
 
 function Stop-GaloreWindowTaskbar {
-    $runtime = $script:GaloreWindowTaskbarRuntime
+    param($Runtime = $script:GaloreWindowTaskbarRuntime)
+    $runtime = $Runtime
+    if($null -eq $runtime) { return }
+    $ownerForm = $runtime.OwnerForm
+    if($ownerForm -and -not $ownerForm.IsDisposed) {
+        if($runtime.MoveHandler) { try { $ownerForm.Remove_Move($runtime.MoveHandler) } catch {} }
+        if($runtime.SizeChangedHandler) { try { $ownerForm.Remove_SizeChanged($runtime.SizeChangedHandler) } catch {} }
+        if($runtime.ShownHandler) { try { $ownerForm.Remove_Shown($runtime.ShownHandler) } catch {} }
+        if($runtime.FormClosedHandler) { try { $ownerForm.Remove_FormClosed($runtime.FormClosedHandler) } catch {} }
+    }
     if($runtime.Timer) {
         $runtime.Timer.Stop()
         $runtime.Timer.Tag = $null
@@ -391,6 +413,7 @@ function Stop-GaloreWindowTaskbar {
         $runtime.Timer = $null
     }
     if($runtime.Bar -and -not $runtime.Bar.IsDisposed) {
+        Unregister-GaloreOverlayForm -Form $runtime.Bar
         $runtime.Bar.Close()
     }
     if($runtime.ToolTip) {
@@ -403,6 +426,12 @@ function Stop-GaloreWindowTaskbar {
     }
     $runtime.Bar = $null
     $runtime.Signature = "<uninitialized>"
+    $runtime.OwnerForm = $null
+    $runtime.MoveHandler = $null
+    $runtime.SizeChangedHandler = $null
+    $runtime.ShownHandler = $null
+    $runtime.FormClosedHandler = $null
+    $runtime.IsInitialized = $false
 }
 
 function Get-GaloreWindowTaskbarKeyColor {

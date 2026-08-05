@@ -24,6 +24,10 @@ $GaloreModuleManifest = [ordered]@{
         "GalorePopupRuntimeState"
         "GaloreWindowTaskbarRuntimeState"
         "GaloreStartMenuRuntimeState"
+        "GaloreQuickAccessRuntimeState"
+        "GaloreOverlayRuntimeState"
+        "GaloreCategoryRuntimeState"
+        "GaloreHotkeySettingsRuntimeState"
     )
 }
 
@@ -292,18 +296,30 @@ class GalorePopupRuntimeState {
 # ============================================================
 
 class GaloreWindowTaskbarRuntimeState {
+    [object]$OwnerForm
     [object]$Bar
     [object]$Timer
     [object]$ToolTip
+    [object]$MoveHandler
+    [object]$SizeChangedHandler
+    [object]$ShownHandler
+    [object]$FormClosedHandler
     [string]$Signature
     [object]$KeyColor
+    [bool]$IsInitialized
 
     GaloreWindowTaskbarRuntimeState() {
+        $this.OwnerForm = $null
         $this.Bar = $null
         $this.Timer = $null
         $this.ToolTip = $null
+        $this.MoveHandler = $null
+        $this.SizeChangedHandler = $null
+        $this.ShownHandler = $null
+        $this.FormClosedHandler = $null
         $this.Signature = "<uninitialized>"
         $this.KeyColor = $null
+        $this.IsInitialized = $false
     }
 }
 
@@ -336,5 +352,109 @@ class GaloreStartMenuRuntimeState {
         $this.WindowsButton = $null
         $this.WindowsTimer = $null
         $this.WindowsButtonNormalBounds = $null
+    }
+}
+
+# ============================================================
+# QUICK ACCESS RUNTIME
+# ============================================================
+
+class GaloreQuickAccessRuntimeState {
+    [object]$OwnerForm
+    [object]$Bar
+    [object]$DropSurface
+    [string]$StatePath
+    [System.Collections.ArrayList]$Items
+    [object]$KeyColor
+    [object]$ToolTip
+    [object]$MoveHandler
+    [object]$SizeChangedHandler
+    [object]$ShownHandler
+    [object]$FormClosedHandler
+    [bool]$IsInitialized
+    [bool]$IsStopping
+    [bool]$IsDragging
+
+    GaloreQuickAccessRuntimeState() {
+        $this.OwnerForm = $null
+        $this.Bar = $null
+        $this.DropSurface = $null
+        $this.StatePath = ""
+        $this.Items = [System.Collections.ArrayList]::new()
+        $this.KeyColor = $null
+        $this.ToolTip = $null
+        $this.MoveHandler = $null
+        $this.SizeChangedHandler = $null
+        $this.ShownHandler = $null
+        $this.FormClosedHandler = $null
+        $this.IsInitialized = $false
+        $this.IsStopping = $false
+        $this.IsDragging = $false
+    }
+}
+
+# ============================================================
+# ALPHA OVERLAY RUNTIME
+# ============================================================
+
+class GaloreOverlayRuntimeState {
+    [object]$OwnerForm
+    [object]$ResizeHandler
+    [System.Collections.ArrayList]$OverlayForms
+    [hashtable]$FadeTimers
+    [bool]$IsLifecycleReady
+    [bool]$IsRegistered
+    [bool]$IsStopping
+    [bool]$TargetVisible
+
+    GaloreOverlayRuntimeState() {
+        $this.OwnerForm = $null
+        $this.ResizeHandler = $null
+        $this.OverlayForms = [System.Collections.ArrayList]::new()
+        $this.FadeTimers = @{}
+        $this.IsLifecycleReady = $false
+        $this.IsRegistered = $false
+        $this.IsStopping = $false
+        $this.TargetVisible = $true
+    }
+}
+
+# ============================================================
+# CATEGORY RUNTIME
+# ============================================================
+
+class GaloreCategoryRuntimeState {
+    [GaloreCategoryState]$State
+    [string]$StateFile
+    [hashtable]$Windows
+    [System.Collections.ArrayList]$Masters
+    [object]$OwnerForm
+    [object]$Projection
+
+    GaloreCategoryRuntimeState() {
+        $this.State = $null
+        $this.StateFile = ""
+        $this.Windows = @{}
+        $this.Masters = [System.Collections.ArrayList]::new()
+        $this.OwnerForm = $null
+        $this.Projection = $null
+    }
+}
+
+# ============================================================
+# HOTKEY SETTINGS RUNTIME
+# ============================================================
+
+class GaloreHotkeySettingsRuntimeState {
+    [object]$OwnerForm
+    [object]$Popup
+    [object]$Button
+    [object]$ToolTip
+
+    GaloreHotkeySettingsRuntimeState() {
+        $this.OwnerForm = $null
+        $this.Popup = $null
+        $this.Button = $null
+        $this.ToolTip = $null
     }
 }

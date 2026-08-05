@@ -5,11 +5,13 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherAlphaOverlay"
     LoadOrder = 230
-    RequiresModules = @("LauncherLogging")
+    RequiresModules = @("LauncherDomain", "LauncherLogging")
     RequiresFunctions = [ordered]@{
         "Write-LauncherDiagnostic" = "LauncherLogging"
     }
-    RequiresTypes = [ordered]@{}
+    RequiresTypes = [ordered]@{
+        "GaloreOverlayRuntimeState" = "LauncherDomain"
+    }
     RequiresVariables = @()
     RequiresFolders = @()
     RequiresFiles = @()
@@ -307,29 +309,57 @@ function Set-GaloreTransparentWindowRegion {
     }
     finally { $path.Dispose() }
 }
-$script:GaloreOverlayFadeTimers = @{}
-$script:GaloreOverlayLifecycleRegistered = $false
-$script:GaloreOverlayLifecycleReady = $false
+$script:GaloreOverlayRuntime = [GaloreOverlayRuntimeState]::new()
+
+function Stop-GaloreOverlayFade {
+    param([GaloreAlphaOverlay.PerPixelAlphaForm]$Form, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $null -eq $Form -or -not $Runtime.FadeTimers.ContainsKey($Form)) {
+        return
+    }
+    $timer = $Runtime.FadeTimers[$Form]
+    $Runtime.FadeTimers.Remove($Form)
+    if($timer) {
+        try {
+            $timer.Stop()
+            $timer.Tag = $null
+            $timer.Dispose()
+        } catch {
+        }
+    }
+}
+
+function Register-GaloreOverlayForm {
+    param([GaloreAlphaOverlay.PerPixelAlphaForm]$Form, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $null -eq $Form -or $Form.IsDisposed) {
+        return
+    }
+    foreach($staleForm in @($Runtime.OverlayForms | Where-Object { $null -eq $_ -or $_.IsDisposed })) {
+        [void]$Runtime.OverlayForms.Remove($staleForm)
+    }
+    if(-not @($Runtime.OverlayForms | Where-Object { [object]::ReferenceEquals($_, $Form) })) {
+        [void]$Runtime.OverlayForms.Add($Form)
+    }
+}
+
+function Unregister-GaloreOverlayForm {
+    param([GaloreAlphaOverlay.PerPixelAlphaForm]$Form, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $null -eq $Form) {
+        return
+    }
+    Stop-GaloreOverlayFade -Form $Form -Runtime $Runtime
+    $registeredForm = @($Runtime.OverlayForms | Where-Object { [object]::ReferenceEquals($_, $Form) }) | Select-Object -First 1
+    if($registeredForm) {
+        [void]$Runtime.OverlayForms.Remove($registeredForm)
+    }
+}
 
 function Start-GaloreOverlayFade {
-    param([GaloreAlphaOverlay.PerPixelAlphaForm]$Form, [int]$TargetOpacity, [int]$DurationMilliseconds = 170, [switch]$HideOnComplete)
-    if($null -eq $Form -or $Form.IsDisposed) {
+    param([GaloreAlphaOverlay.PerPixelAlphaForm]$Form, [int]$TargetOpacity, [int]$DurationMilliseconds = 170, [switch]$HideOnComplete, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $Runtime.IsStopping -or $null -eq $Form -or $Form.IsDisposed) {
         return
     }
     try {
-        $context = $Form.Tag
-        if($null -eq $context -or -not ($context -is [System.Collections.IDictionary])) {
-            $context = @{
-                FadeTimer = $null
-            }
-            $Form.Tag = $context
-        }
-        $existingTimer = $context["FadeTimer"]
-        if($null -ne $existingTimer) {
-            $existingTimer.Stop()
-            $existingTimer.Dispose()
-            $context["FadeTimer"] = $null
-        }
+        Stop-GaloreOverlayFade -Form $Form -Runtime $Runtime
         $target = [Math]::Max(0, [Math]::Min(255, $TargetOpacity))
         if($target -gt 0 -and -not $Form.Visible) {
             $Form.SetLayeredOpacity(0)
@@ -346,32 +376,51 @@ function Start-GaloreOverlayFade {
         }
         $timer = New-Object System.Windows.Forms.Timer
         $timer.Interval = 15
-        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $timer.Tag = [pscustomobject]@{
+            Form = $Form
+            Runtime = $Runtime
+            StartOpacity = [int]$start
+            TargetOpacity = [int]$target
+            DurationMilliseconds = [int]$DurationMilliseconds
+            Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+            HideOnComplete = [bool]$HideOnComplete
+        }
         $timer.Add_Tick({
+            $timer = $this
+            $state = $timer.Tag
             try {
-                if($null -eq $Form -or $Form.IsDisposed) {
+                if($null -eq $state -or $null -eq $state.Runtime -or $state.Runtime.IsStopping -or $null -eq $state.Form -or $state.Form.IsDisposed) {
                     $timer.Stop()
+                    $timer.Tag = $null
                     $timer.Dispose()
-                    $context["FadeTimer"] = $null
+                    if($state -and $state.Runtime -and $state.Runtime.FadeTimers.ContainsKey($state.Form) -and [object]::ReferenceEquals($state.Runtime.FadeTimers[$state.Form], $timer)) {
+                        $state.Runtime.FadeTimers.Remove($state.Form)
+                    }
                     return
                 }
-                $progress = [Math]::Min(1.0, ($stopwatch.ElapsedMilliseconds / [double]$DurationMilliseconds))
-                $opacity = [int][Math]::Round($start + (($target - $start) * $progress))
-                $Form.SetLayeredOpacity($opacity)
+                $progress = [Math]::Min(1.0, ($state.Stopwatch.ElapsedMilliseconds / [double]$state.DurationMilliseconds))
+                $opacity = [int][Math]::Round($state.StartOpacity + (($state.TargetOpacity - $state.StartOpacity) * $progress))
+                $state.Form.SetLayeredOpacity($opacity)
                 if($progress -ge 1.0) {
                     $timer.Stop()
+                    $timer.Tag = $null
                     $timer.Dispose()
-                    $context["FadeTimer"] = $null
-                    if($HideOnComplete) {
-                        $Form.Hide()
-                        $Form.SetLayeredOpacity(255)
+                    if($state.Runtime.FadeTimers.ContainsKey($state.Form) -and [object]::ReferenceEquals($state.Runtime.FadeTimers[$state.Form], $timer)) {
+                        $state.Runtime.FadeTimers.Remove($state.Form)
+                    }
+                    if($state.HideOnComplete) {
+                        $state.Form.Hide()
+                        $state.Form.SetLayeredOpacity(255)
                     }
                 }
             } catch {
                 try {
                     $timer.Stop()
+                    $timer.Tag = $null
                     $timer.Dispose()
-                    $context["FadeTimer"] = $null
+                    if($state -and $state.Runtime -and $state.Runtime.FadeTimers.ContainsKey($state.Form) -and [object]::ReferenceEquals($state.Runtime.FadeTimers[$state.Form], $timer)) {
+                        $state.Runtime.FadeTimers.Remove($state.Form)
+                    }
                 } catch {
                 }
                 try {
@@ -379,8 +428,8 @@ function Start-GaloreOverlayFade {
                 } catch {
                 }
             }
-        }.GetNewClosure())
-        $context["FadeTimer"] = $timer
+        })
+        $Runtime.FadeTimers[$Form] = $timer
         $timer.Start()
     } catch {
         try {
@@ -391,43 +440,98 @@ function Start-GaloreOverlayFade {
 }
 
 function Show-GaloreLauncherOverlayBars {
-    param([int]$DurationMilliseconds = 220)
-    $taskbarBar = if($script:GaloreWindowTaskbarRuntime) { $script:GaloreWindowTaskbarRuntime.Bar } else { $null }
-    foreach($bar in @($script:GaloreQuickAccessBar, $taskbarBar)) {
+    param([int]$DurationMilliseconds = 220, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $Runtime.IsStopping) {
+        return
+    }
+    foreach($bar in @($Runtime.OverlayForms)) {
         if($null -ne $bar -and -not $bar.IsDisposed) {
-            Start-GaloreOverlayFade -Form $bar -TargetOpacity 255 -DurationMilliseconds $DurationMilliseconds
+            Start-GaloreOverlayFade -Form $bar -TargetOpacity 255 -DurationMilliseconds $DurationMilliseconds -Runtime $Runtime
+        } elseif($bar) {
+            [void]$Runtime.OverlayForms.Remove($bar)
         }
     }
 }
 
 function Hide-GaloreLauncherOverlayBars {
-    param([int]$DurationMilliseconds = 170)
-    $taskbarBar = if($script:GaloreWindowTaskbarRuntime) { $script:GaloreWindowTaskbarRuntime.Bar } else { $null }
-    foreach($bar in @($script:GaloreQuickAccessBar, $taskbarBar)) {
+    param([int]$DurationMilliseconds = 170, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $Runtime.IsStopping) {
+        return
+    }
+    foreach($bar in @($Runtime.OverlayForms)) {
         if($null -ne $bar -and -not $bar.IsDisposed -and $bar.Visible) {
-            Start-GaloreOverlayFade -Form $bar -TargetOpacity 0 -DurationMilliseconds $DurationMilliseconds -HideOnComplete
+            Start-GaloreOverlayFade -Form $bar -TargetOpacity 0 -DurationMilliseconds $DurationMilliseconds -HideOnComplete -Runtime $Runtime
+        } elseif($bar -and $bar.IsDisposed) {
+            [void]$Runtime.OverlayForms.Remove($bar)
         }
     }
 }
 
+function Set-GaloreOverlayLifecycleReady {
+    param([bool]$Ready = $true, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -ne $Runtime) {
+        $Runtime.IsLifecycleReady = $Ready
+    }
+}
+
+function Set-GaloreOverlayTargetVisible {
+    param([bool]$Visible = $true, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -ne $Runtime) {
+        $Runtime.TargetVisible = $Visible
+    }
+}
+
 function Register-GaloreOverlayLifecycle {
-    param([System.Windows.Forms.Form]$Form)
-    if($script:GaloreOverlayLifecycleRegistered) {
+    param([System.Windows.Forms.Form]$Form, $Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $null -eq $Form -or $Form.IsDisposed) {
         return
     }
-    $script:GaloreOverlayLifecycleRegistered = $true
-    $Form.Add_Resize({
-        if(-not $script:GaloreOverlayLifecycleReady) {
+    if([object]::ReferenceEquals($Runtime.OwnerForm, $Form) -and $Runtime.IsRegistered) {
+        return
+    }
+    Stop-GaloreOverlayResources -Runtime $Runtime
+    $Runtime.OwnerForm = $Form
+    $Runtime.ResizeHandler = {
+        param($sender, $e)
+        if($Runtime.IsStopping -or -not $Runtime.IsLifecycleReady -or -not [object]::ReferenceEquals($Runtime.OwnerForm, $sender)) {
             return
         }
-        if($this.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized) {
-            Hide-GaloreLauncherOverlayBars -DurationMilliseconds 170
-        } elseif($this.Visible -and $this.WindowState -eq [System.Windows.Forms.FormWindowState]::Normal -and $script:LauncherWindowTargetVisible) {
-            Show-GaloreLauncherOverlayBars -DurationMilliseconds 220
+        if($sender.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized) {
+            Hide-GaloreLauncherOverlayBars -DurationMilliseconds 170 -Runtime $Runtime
+        } elseif($sender.Visible -and $sender.WindowState -eq [System.Windows.Forms.FormWindowState]::Normal -and $Runtime.TargetVisible) {
+            Show-GaloreLauncherOverlayBars -DurationMilliseconds 220 -Runtime $Runtime
         }
-    }.GetNewClosure())
+    }.GetNewClosure()
+    $Form.Add_Resize($Runtime.ResizeHandler)
+    $Runtime.IsRegistered = $true
 }
-foreach($callbackName in @("Start-GaloreOverlayFade", "Show-GaloreLauncherOverlayBars", "Hide-GaloreLauncherOverlayBars", "Register-GaloreOverlayLifecycle")) {
+
+function Stop-GaloreOverlayResources {
+    param($Runtime = $script:GaloreOverlayRuntime)
+    if($null -eq $Runtime -or $Runtime.IsStopping) {
+        return
+    }
+    $Runtime.IsStopping = $true
+    foreach($form in @($Runtime.FadeTimers.Keys)) {
+        Stop-GaloreOverlayFade -Form $form -Runtime $Runtime
+    }
+    if($Runtime.OwnerForm -and -not $Runtime.OwnerForm.IsDisposed -and $Runtime.ResizeHandler) {
+        try {
+            $Runtime.OwnerForm.Remove_Resize($Runtime.ResizeHandler)
+        } catch {
+        }
+    }
+    $Runtime.OwnerForm = $null
+    $Runtime.ResizeHandler = $null
+    $Runtime.OverlayForms = [System.Collections.ArrayList]::new()
+    $Runtime.FadeTimers = @{}
+    $Runtime.IsLifecycleReady = $false
+    $Runtime.IsRegistered = $false
+    $Runtime.IsStopping = $false
+    $Runtime.TargetVisible = $true
+}
+
+foreach($callbackName in @("Start-GaloreOverlayFade", "Stop-GaloreOverlayFade", "Register-GaloreOverlayForm", "Unregister-GaloreOverlayForm", "Show-GaloreLauncherOverlayBars", "Hide-GaloreLauncherOverlayBars", "Set-GaloreOverlayLifecycleReady", "Set-GaloreOverlayTargetVisible", "Register-GaloreOverlayLifecycle", "Stop-GaloreOverlayResources")) {
     $callback = Get-Command -Name $callbackName -CommandType Function -ErrorAction Stop
     Set-Item -Path ("Function:global:{0}" -f $callbackName) -Value $callback.ScriptBlock -Force
 }

@@ -84,6 +84,8 @@ $GaloreRoot
 
 . (Join-Path $moduleRoot "LauncherHardware.ps1")
 
+. (Join-Path $moduleRoot "LauncherIntegrationAdapters.ps1")
+
 . (Join-Path $moduleRoot "LauncherProcess.ps1")
 
 . (Join-Path $moduleRoot "LauncherPrograms.ps1")
@@ -513,8 +515,9 @@ Describe "Quick Access persistence" {
 
     BeforeEach {
 
-        $script:GaloreQuickAccessPath = Join-Path $TestDrive "quick-access.json"
-        $script:GaloreQuickAccessItems = New-Object System.Collections.ArrayList
+        Stop-GaloreQuickAccessResources
+        $script:GaloreQuickAccessRuntime = [GaloreQuickAccessRuntimeState]::new()
+        $script:GaloreQuickAccessRuntime.StatePath = Join-Path $TestDrive "quick-access.json"
         Mock Update-GaloreQuickAccessBar {}
         Mock Write-LauncherDiagnostic {}
 
@@ -531,7 +534,7 @@ Describe "Quick Access persistence" {
 
     It "returns no items when its state file is malformed" {
 
-        Set-Content -LiteralPath $script:GaloreQuickAccessPath -Value "not json" -Encoding UTF8
+        Set-Content -LiteralPath $script:GaloreQuickAccessRuntime.StatePath -Value "not json" -Encoding UTF8
 
         @(
             Get-GaloreQuickAccessItems
@@ -559,7 +562,7 @@ Describe "Quick Access persistence" {
             )
         } |
         ConvertTo-Json -Depth 4 |
-        Set-Content -LiteralPath $script:GaloreQuickAccessPath -Encoding UTF8
+        Set-Content -LiteralPath $script:GaloreQuickAccessRuntime.StatePath -Encoding UTF8
 
         $items = @(Get-GaloreQuickAccessItems)
 
@@ -576,12 +579,12 @@ Describe "Quick Access persistence" {
 
     It "saves only the expected version and item paths" {
 
-        [void]$script:GaloreQuickAccessItems.Add([pscustomobject]@{ Path = "C:\\Tools\\One.exe" })
-        [void]$script:GaloreQuickAccessItems.Add([pscustomobject]@{ Path = "C:\\Tools\\Two.exe" })
+        [void]$script:GaloreQuickAccessRuntime.Items.Add([pscustomobject]@{ Path = "C:\\Tools\\One.exe" })
+        [void]$script:GaloreQuickAccessRuntime.Items.Add([pscustomobject]@{ Path = "C:\\Tools\\Two.exe" })
 
         Save-GaloreQuickAccessItems
 
-        $saved = Get-Content -LiteralPath $script:GaloreQuickAccessPath -Raw | ConvertFrom-Json
+        $saved = Get-Content -LiteralPath $script:GaloreQuickAccessRuntime.StatePath -Raw | ConvertFrom-Json
 
         $saved.Version |
         Should Be 1
@@ -601,15 +604,15 @@ Describe "Quick Access persistence" {
 
         $first = [pscustomobject]@{ Path = "C:\\Tools\\One.exe" }
         $second = [pscustomobject]@{ Path = "C:\\Tools\\Two.exe" }
-        [void]$script:GaloreQuickAccessItems.Add($first)
-        [void]$script:GaloreQuickAccessItems.Add($second)
+        [void]$script:GaloreQuickAccessRuntime.Items.Add($first)
+        [void]$script:GaloreQuickAccessRuntime.Items.Add($second)
 
         Remove-GaloreQuickAccessItem -Path $first.Path
 
-        @($script:GaloreQuickAccessItems).Count |
+        @($script:GaloreQuickAccessRuntime.Items).Count |
         Should Be 1
 
-        $script:GaloreQuickAccessItems[0].Path |
+        $script:GaloreQuickAccessRuntime.Items[0].Path |
         Should Be $second.Path
 
         Assert-MockCalled Update-GaloreQuickAccessBar -Times 1 -Exactly
@@ -618,11 +621,11 @@ Describe "Quick Access persistence" {
 
     It "leaves the collection untouched when the requested item is absent" {
 
-        [void]$script:GaloreQuickAccessItems.Add([pscustomobject]@{ Path = "C:\\Tools\\One.exe" })
+        [void]$script:GaloreQuickAccessRuntime.Items.Add([pscustomobject]@{ Path = "C:\\Tools\\One.exe" })
 
         Remove-GaloreQuickAccessItem -Path "C:\\Tools\\Missing.exe"
 
-        @($script:GaloreQuickAccessItems).Count |
+        @($script:GaloreQuickAccessRuntime.Items).Count |
         Should Be 1
 
     }
@@ -633,8 +636,9 @@ Describe "Quick Access drop handling" {
 
     BeforeEach {
 
-        $script:GaloreQuickAccessPath = Join-Path $TestDrive "quick-access.json"
-        $script:GaloreQuickAccessItems = New-Object System.Collections.ArrayList
+        Stop-GaloreQuickAccessResources
+        $script:GaloreQuickAccessRuntime = [GaloreQuickAccessRuntimeState]::new()
+        $script:GaloreQuickAccessRuntime.StatePath = Join-Path $TestDrive "quick-access.json"
         Mock Save-GaloreQuickAccessItems {}
         Mock Update-GaloreQuickAccessBar {}
         Mock Write-LauncherDiagnostic {}
@@ -670,16 +674,16 @@ Describe "Quick Access drop handling" {
 
         Add-GaloreQuickAccessDroppedItems -Data $data
 
-        @($script:GaloreQuickAccessItems).Count |
+        @($script:GaloreQuickAccessRuntime.Items).Count |
         Should Be 4
 
         foreach($path in @($executable, $shortcut, $internetShortcut, $folder))
         {
-            ($script:GaloreQuickAccessItems.Path -contains $path) |
+            ($script:GaloreQuickAccessRuntime.Items.Path -contains $path) |
             Should Be $true
         }
 
-        ($script:GaloreQuickAccessItems.Path -contains $textFile) |
+        ($script:GaloreQuickAccessRuntime.Items.Path -contains $textFile) |
         Should Be $false
 
         Assert-MockCalled Save-GaloreQuickAccessItems -Times 1 -Exactly
@@ -689,7 +693,7 @@ Describe "Quick Access drop handling" {
 
     It "ignores null and non-file-drop data without changing state" {
 
-        [void]$script:GaloreQuickAccessItems.Add(
+        [void]$script:GaloreQuickAccessRuntime.Items.Add(
             [pscustomobject]@{ Path = "C:\\Tools\\Existing.exe" }
         )
 
@@ -702,11 +706,143 @@ Describe "Quick Access drop handling" {
         Add-GaloreQuickAccessDroppedItems -Data $null
         Add-GaloreQuickAccessDroppedItems -Data $plainData
 
-        @($script:GaloreQuickAccessItems).Count |
+        @($script:GaloreQuickAccessRuntime.Items).Count |
         Should Be 1
 
         Assert-MockCalled Save-GaloreQuickAccessItems -Times 0 -Exactly -Scope It
         Assert-MockCalled Update-GaloreQuickAccessBar -Times 0 -Exactly -Scope It
+
+    }
+
+}
+
+Describe "Quick Access runtime ownership" {
+
+    BeforeEach {
+
+        Stop-GaloreQuickAccessResources
+        $script:GaloreQuickAccessRuntime = [GaloreQuickAccessRuntimeState]::new()
+        $script:SettingsFolder = $TestDrive
+
+    }
+
+    AfterEach {
+
+        Stop-GaloreQuickAccessResources
+
+    }
+
+    It "starts with one typed empty runtime" {
+
+        $runtime = $script:GaloreQuickAccessRuntime
+
+        $runtime.OwnerForm |
+        Should BeNullOrEmpty
+
+        $runtime.Bar |
+        Should BeNullOrEmpty
+
+        $runtime.Items.Count |
+        Should Be 0
+
+        $runtime.IsInitialized |
+        Should Be $false
+
+    }
+
+    It "registers an interactive quick-access drop target" {
+
+        $target = New-Object System.Windows.Forms.Panel
+        try {
+            Register-GaloreQuickAccessDropTarget -Target $target -Runtime $script:GaloreQuickAccessRuntime
+
+            $target.AllowDrop | Should Be $true
+            $script:GaloreQuickAccessRuntime.Items.Count | Should Be 0
+        } finally {
+            $target.Dispose()
+        }
+    }
+
+    It "reuses one bar when initialized twice for the same form" {
+
+        $form = New-Object System.Windows.Forms.Form
+
+        try {
+            Initialize-GaloreQuickAccessBar -Form $form
+            $firstBar = $script:GaloreQuickAccessRuntime.Bar
+
+            Initialize-GaloreQuickAccessBar -Form $form
+
+            [object]::ReferenceEquals($firstBar, $script:GaloreQuickAccessRuntime.Bar) |
+            Should Be $true
+
+            $script:GaloreQuickAccessRuntime.IsInitialized |
+            Should Be $true
+
+        } finally {
+            $form.Dispose()
+        }
+
+    }
+
+    It "releases the old owner before moving to a new form" {
+
+        $firstForm = New-Object System.Windows.Forms.Form
+        $secondForm = New-Object System.Windows.Forms.Form
+
+        try {
+            Initialize-GaloreQuickAccessBar -Form $firstForm
+            $firstBar = $script:GaloreQuickAccessRuntime.Bar
+
+            Initialize-GaloreQuickAccessBar -Form $secondForm
+
+            [object]::ReferenceEquals($script:GaloreQuickAccessRuntime.OwnerForm, $secondForm) |
+            Should Be $true
+
+            [object]::ReferenceEquals($firstBar, $script:GaloreQuickAccessRuntime.Bar) |
+            Should Be $false
+
+            $firstForm.Close()
+
+            [object]::ReferenceEquals($script:GaloreQuickAccessRuntime.OwnerForm, $secondForm) |
+            Should Be $true
+
+        } finally {
+            $firstForm.Dispose()
+            $secondForm.Dispose()
+        }
+
+    }
+
+    It "stops and clears owned resources idempotently" {
+
+        $form = New-Object System.Windows.Forms.Form
+
+        try {
+            Initialize-GaloreQuickAccessBar -Form $form
+
+            { Stop-GaloreQuickAccessResources; Stop-GaloreQuickAccessResources } |
+            Should Not Throw
+
+            $runtime = $script:GaloreQuickAccessRuntime
+            $runtime.OwnerForm |
+            Should BeNullOrEmpty
+
+            $runtime.Bar |
+            Should BeNullOrEmpty
+
+            $runtime.ToolTip |
+            Should BeNullOrEmpty
+
+            $runtime.MoveHandler |
+            Should BeNullOrEmpty
+
+            $runtime.IsInitialized |
+            Should Be $false
+
+        } finally {
+            $form.Dispose()
+        }
 
     }
 
@@ -821,6 +957,146 @@ Describe "Window taskbar filtering" {
 }
 
 Describe "Alpha overlay helpers" {
+
+    BeforeEach {
+
+        Stop-GaloreOverlayResources
+        $script:GaloreOverlayRuntime = [GaloreOverlayRuntimeState]::new()
+
+    }
+
+    AfterEach {
+
+        Stop-GaloreOverlayResources
+
+    }
+
+    It "starts with one typed empty overlay runtime" {
+
+        $runtime = $script:GaloreOverlayRuntime
+
+        $runtime.OwnerForm |
+        Should BeNullOrEmpty
+
+        $runtime.OverlayForms.Count |
+        Should Be 0
+
+        $runtime.FadeTimers.Count |
+        Should Be 0
+
+        $runtime.TargetVisible |
+        Should Be $true
+
+    }
+
+    It "registers overlay forms once and releases only the requested form" {
+
+        $first = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+        $second = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+
+        try {
+            Register-GaloreOverlayForm -Form $first
+            Register-GaloreOverlayForm -Form $first
+            Register-GaloreOverlayForm -Form $second
+
+            $script:GaloreOverlayRuntime.OverlayForms.Count |
+            Should Be 2
+
+            Unregister-GaloreOverlayForm -Form $first
+
+            $script:GaloreOverlayRuntime.OverlayForms.Count |
+            Should Be 1
+
+            [object]::ReferenceEquals($script:GaloreOverlayRuntime.OverlayForms[0], $second) |
+            Should Be $true
+
+        } finally {
+            $first.Dispose()
+            $second.Dispose()
+        }
+
+    }
+
+    It "replaces a prior fade timer without retaining stale runtime state" {
+
+        $form = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+
+        try {
+            Start-GaloreOverlayFade -Form $form -TargetOpacity 0 -DurationMilliseconds 500
+            $firstTimer = $script:GaloreOverlayRuntime.FadeTimers[$form]
+
+            Start-GaloreOverlayFade -Form $form -TargetOpacity 0 -DurationMilliseconds 500
+            $secondTimer = $script:GaloreOverlayRuntime.FadeTimers[$form]
+
+            [object]::ReferenceEquals($firstTimer, $secondTimer) |
+            Should Be $false
+
+            $script:GaloreOverlayRuntime.FadeTimers.Count |
+            Should Be 1
+
+            Stop-GaloreOverlayFade -Form $form
+
+            $script:GaloreOverlayRuntime.FadeTimers.Count |
+            Should Be 0
+
+        } finally {
+            $form.Dispose()
+        }
+
+    }
+
+    It "fades every registered overlay form without touching unregistered forms" {
+
+        $first = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+        $second = New-Object GaloreAlphaOverlay.PerPixelAlphaForm
+
+        try {
+            Register-GaloreOverlayForm -Form $first
+            Register-GaloreOverlayForm -Form $second
+            Mock Start-GaloreOverlayFade {}
+
+            Show-GaloreLauncherOverlayBars
+            Show-GaloreLauncherOverlayBars -DurationMilliseconds 123
+            Assert-MockCalled Start-GaloreOverlayFade -Times 2 -Exactly -ParameterFilter { $TargetOpacity -eq 255 -and $DurationMilliseconds -eq 123 }
+            Assert-MockCalled Start-GaloreOverlayFade -Times 4 -Exactly -ParameterFilter { $TargetOpacity -eq 255 }
+        } finally {
+            $first.Dispose()
+            $second.Dispose()
+        }
+    }
+
+    It "owns lifecycle registration and clears it idempotently" {
+
+        $firstForm = New-Object System.Windows.Forms.Form
+        $secondForm = New-Object System.Windows.Forms.Form
+
+        try {
+            Register-GaloreOverlayLifecycle -Form $firstForm
+            Register-GaloreOverlayLifecycle -Form $firstForm
+
+            [object]::ReferenceEquals($script:GaloreOverlayRuntime.OwnerForm, $firstForm) |
+            Should Be $true
+
+            Register-GaloreOverlayLifecycle -Form $secondForm
+
+            [object]::ReferenceEquals($script:GaloreOverlayRuntime.OwnerForm, $secondForm) |
+            Should Be $true
+
+            { Stop-GaloreOverlayResources; Stop-GaloreOverlayResources } |
+            Should Not Throw
+
+            $script:GaloreOverlayRuntime.OwnerForm |
+            Should BeNullOrEmpty
+
+            $script:GaloreOverlayRuntime.ResizeHandler |
+            Should BeNullOrEmpty
+
+        } finally {
+            $firstForm.Dispose()
+            $secondForm.Dispose()
+        }
+
+    }
 
     It "converts an icon to a correctly sized premultiplied-alpha bitmap" {
 
@@ -1201,6 +1477,33 @@ Describe "Hotkey settings persistence" {
 
     }
 
+    It "reuses taskbar resources for repeated initialization on one form" {
+
+        Stop-GaloreWindowTaskbar
+        $script:GaloreWindowTaskbarRuntime = [GaloreWindowTaskbarRuntimeState]::new()
+        $form = New-Object System.Windows.Forms.Form
+        Mock Register-GaloreOverlayForm {}
+        Mock Register-GaloreOverlayLifecycle {}
+
+        try {
+            Initialize-GaloreWindowTaskbar -Form $form
+            $firstBar = $script:GaloreWindowTaskbarRuntime.Bar
+            $firstTimer = $script:GaloreWindowTaskbarRuntime.Timer
+
+            Initialize-GaloreWindowTaskbar -Form $form
+
+            $script:GaloreWindowTaskbarRuntime.Bar | Should Be $firstBar
+            $script:GaloreWindowTaskbarRuntime.Timer | Should Be $firstTimer
+            $script:GaloreWindowTaskbarRuntime.OwnerForm | Should Be $form
+            Assert-MockCalled Register-GaloreOverlayForm -Times 1 -Exactly
+        } finally {
+            Stop-GaloreWindowTaskbar
+            $form.Dispose()
+        }
+
+        $script:GaloreWindowTaskbarRuntime.IsInitialized | Should Be $false
+    }
+
 }
 
 Describe "Category state contracts" {
@@ -1215,9 +1518,7 @@ Describe "Category state contracts" {
 
         Mock Write-LauncherDiagnostic {}
 
-        $script:GaloreCategoryState = $null
-
-        $script:GaloreCategoryFile = $null
+        $script:GaloreCategoryRuntime = [GaloreCategoryRuntimeState]::new()
 
     }
 
@@ -1261,7 +1562,7 @@ Describe "Category state contracts" {
 
         Save-GaloreCategoryState
 
-        $script:GaloreCategoryState = $null
+        $script:GaloreCategoryRuntime = [GaloreCategoryRuntimeState]::new()
 
         $restored = Initialize-GaloreCategoryState
 
@@ -1524,6 +1825,70 @@ Describe "Category program projections" {
 
 }
 
+Describe "Category and hotkey settings runtime ownership" {
+
+    It "keeps category state, popups, and projection ownership in one typed runtime" {
+
+        $runtime = [GaloreCategoryRuntimeState]::new()
+        $script:GaloreCategoryRuntimeTestSettingsFolder = Join-Path $TestDrive "CategoryRuntimeSettings"
+        New-Item -ItemType Directory -Path $script:GaloreCategoryRuntimeTestSettingsFolder -Force | Out-Null
+        Mock Get-LauncherSettingsFolder { $script:GaloreCategoryRuntimeTestSettingsFolder }
+        $runtime.State | Should BeNullOrEmpty
+        $runtime.Windows.Count | Should Be 0
+
+        $form = New-Object System.Windows.Forms.Form
+        try {
+            $projection = Initialize-GaloreCategories -Form $form -Runtime $runtime
+            (Initialize-GaloreCategories -Form $form -Runtime $runtime) | Should Be $projection
+            $runtime.OwnerForm | Should Be $form
+            $runtime.Projection | Should Be $projection
+            $runtime.Masters.Count | Should Be 4
+            @($form.Controls | Where-Object { $_.Name -match '^Category[1-4]$' }).Count | Should Be 4
+        } finally {
+            Stop-GaloreCategoryResources -Runtime $runtime
+            Stop-GaloreCategoryResources -Runtime $runtime
+            $form.Dispose()
+        }
+
+        $runtime.Windows.Count | Should Be 0
+        $runtime.OwnerForm | Should BeNullOrEmpty
+        $runtime.Projection | Should BeNullOrEmpty
+        $runtime.Masters.Count | Should Be 0
+    }
+
+    It "stops a category popup registry safely and idempotently" {
+
+        $runtime = [GaloreCategoryRuntimeState]::new()
+        $window = New-Object System.Windows.Forms.Form
+        $runtime.Windows["Category1"] = $window
+
+        Stop-GaloreCategoryResources -Runtime $runtime
+        Stop-GaloreCategoryResources -Runtime $runtime
+
+        $runtime.Windows.Count | Should Be 0
+        $window.IsDisposed | Should Be $true
+    }
+
+    It "owns hotkey settings controls and releases them safely" {
+
+        $runtime = [GaloreHotkeySettingsRuntimeState]::new()
+        $runtime.Popup | Should BeNullOrEmpty
+        $runtime.Button | Should BeNullOrEmpty
+
+        $runtime.Popup = New-Object System.Windows.Forms.Form
+        $runtime.Button = New-Object System.Windows.Forms.Button
+        $runtime.ToolTip = New-Object System.Windows.Forms.ToolTip
+
+        Stop-GaloreHotkeySettingsResources -Runtime $runtime
+        Stop-GaloreHotkeySettingsResources -Runtime $runtime
+
+        $runtime.Popup | Should BeNullOrEmpty
+        $runtime.Button | Should BeNullOrEmpty
+        $runtime.ToolTip | Should BeNullOrEmpty
+        $runtime.OwnerForm | Should BeNullOrEmpty
+    }
+}
+
 Describe "Configuration discovery contracts" {
 
     It "applies a saved executable override without replacing its program entry" {
@@ -1685,8 +2050,11 @@ Describe "Configuration discovery contracts" {
 
         }
 
+        $programs.Phone.Path |
+        Should Be "C:\\Galore\\Programs\\scrcpy\\playphone.vbs"
+
         $programs.Phone.Args |
-        Should Be '//nologo "C:\\Galore\\Programs\\scrcpy\\playphone.vbs"'
+        Should Be ""
 
         $programs.Phone.StatusProcess |
         Should Be "scrcpy"
@@ -1819,11 +2187,13 @@ Describe "Typed program action and status consumers" {
 
     BeforeEach {
 
+        Mock Start-GaloreProgramAdapter { $true }
+
         Mock Start-Process {}
 
         Mock Refresh-StatusDelayed {}
 
-        Mock Start-SpotifyAutoplay {}
+        Mock Start-GaloreSpotifyAutoplayAdapter { $true }
 
         Mock Write-LauncherDiagnostic {}
 
@@ -1835,8 +2205,8 @@ Describe "Typed program action and status consumers" {
 
         Invoke-ProgramLaunch -Programs @{ Discord = $program } -Statuses @{} -ProgramNames @("Discord") -AppRoot $GaloreRoot
 
-        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
-            $FilePath -eq "C:\Apps\DiscordUpdate.exe" -and $ArgumentList -eq "--processStart Discord.exe"
+        Assert-MockCalled Start-GaloreProgramAdapter -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Program.Path -eq "C:\Apps\DiscordUpdate.exe" -and $Program.Args -eq "--processStart Discord.exe"
         }
 
         Assert-MockCalled Refresh-StatusDelayed -Times 1 -Exactly -Scope It -ParameterFilter {
@@ -1891,6 +2261,50 @@ Describe "Typed program action and status consumers" {
 
     }
 
+}
+
+Describe "Integration adapter contracts" {
+
+    It "keeps empty process identities safely stopped" {
+
+        Mock Get-Process {}
+
+        (Test-GaloreProcessRunning -ProcessName "") | Should Be $false
+        (Get-GaloreVisibleProcess -ProcessName "") | Should BeNullOrEmpty
+        Assert-MockCalled Get-Process -Times 0 -Exactly
+    }
+
+    It "routes VBS programs through the hidden script adapter" {
+
+        $program = [GaloreProgramDefinition]::new("C:\\Tools\\Phone.vbs", "--safe", "scrcpy", "scrcpy")
+        Mock Start-GaloreHiddenWscript { $true }
+
+        (Start-GaloreProgramAdapter -Program $program) | Should Be $true
+
+        Assert-MockCalled Start-GaloreHiddenWscript -Times 1 -Exactly -ParameterFilter {
+            $ScriptPath -eq "C:\\Tools\\Phone.vbs" -and $ArgumentList -eq "--safe"
+        }
+    }
+
+    It "routes normal programs through the standard process launcher" {
+
+        $program = [GaloreProgramDefinition]::new("C:\\Tools\\Tool.exe", "--silent", "Tool", "Tool")
+        Mock Start-Process {}
+
+        (Start-GaloreProgramAdapter -Program $program) | Should Be $true
+
+        Assert-MockCalled Start-Process -Times 1 -Exactly -ParameterFilter {
+            $FilePath -eq "C:\\Tools\\Tool.exe" -and $ArgumentList -eq "--silent"
+        }
+    }
+
+    It "does not launch unconfigured automation adapters" {
+
+        Mock Start-Process {}
+
+        (Start-GaloreSpotifyAutoplayAdapter -AppRoot "") | Should Be $false
+        Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+    }
 }
 
 Describe "Program status runtime ownership" {
@@ -2584,6 +2998,32 @@ Describe "Popup runtime ownership" {
         $script:GalorePopupRuntime.ActiveSystemToolPopup |
         Should BeNullOrEmpty
 
+    }
+
+    It "creates a fallback system-tool popup with owned fade and image state" {
+
+        $anchorForm = New-Object System.Windows.Forms.Form
+        $anchor = New-Object System.Windows.Forms.Button
+        $anchorForm.Controls.Add($anchor)
+        $anchorForm.CreateControl()
+        $anchor.CreateControl()
+        if(-not (Get-Command Get-GaloreResourcePath -ErrorAction SilentlyContinue)) {
+            function Get-GaloreResourcePath { param([string]$Name) return $Name }
+        }
+        Mock Get-GaloreResourcePath { Join-Path $TestDrive "missing-popup-art.png" }
+
+        $popup = $null
+        try {
+            $popup = New-GaloreSystemToolPopup -Anchor $anchor -BackgroundImageName "missing-popup-art.png" -FallbackWidth 123 -FallbackHeight 87
+
+            $popup.ClientSize.Width | Should Be 123
+            $popup.ClientSize.Height | Should Be 87
+            $popup.Tag.FadeTimer | Should BeNullOrEmpty
+            $popup.Tag.Runtime | Should Be $script:GalorePopupRuntime
+        } finally {
+            if($popup -and -not $popup.IsDisposed) { $popup.Dispose() }
+            $anchorForm.Dispose()
+        }
     }
 
 }

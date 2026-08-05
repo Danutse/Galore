@@ -5,8 +5,11 @@
 $GaloreModuleManifest = [ordered]@{
     Name = "LauncherProcess"
     LoadOrder = 30
-    RequiresModules = @()
-    RequiresFunctions = [ordered]@{}
+    RequiresModules = @("LauncherIntegrationAdapters")
+    RequiresFunctions = [ordered]@{
+        "Get-GaloreVisibleProcess" = "LauncherIntegrationAdapters"
+        "Test-GaloreProcessRunning" = "LauncherIntegrationAdapters"
+    }
     RequiresTypes = [ordered]@{}
     RequiresVariables = @()
     RequiresFolders = @()
@@ -70,9 +73,7 @@ public class WindowFocus {
 
 function Bring-ProgramToFront {
     param([string]$ProcessName)
-    $process = Get-Process $ProcessName -ErrorAction SilentlyContinue | Where-Object {
-        $_.MainWindowHandle -ne 0
-    } | Select-Object -First 1
+    $process = Get-GaloreVisibleProcess -ProcessName $ProcessName
     if(!$process) {
         return
     }
@@ -102,10 +103,5 @@ function Bring-ProgramToFront {
 
 function Get-ProgramStatus {
     param([string]$ProcessName)
-    $running = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue
-    if($running) {
-        return $true
-    } else {
-        return $false
-    }
+    return Test-GaloreProcessRunning -ProcessName $ProcessName
 }
